@@ -1,0 +1,8 @@
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: true
+  better-sqlite3: false
+permissions:
+  void:
+    skills: true

@@ -1,0 +1,124 @@
+# cloudfinance
+
+Minimal Vue 3 SPA + Void API foundation for the budgeting architecture in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). No domain features or visual design yet.
+
+## Develop
+
+Install the global [Vite+ CLI](https://viteplus.dev/guide/global-cli), then let it manage
+this project's Node 24.22.0 and pnpm 12.14.0. The system Node is left alone.
+
+```sh
+curl -fsSL https://vite.plus | bash
+vp env install
+vp install
+vp dev
+```
+
+Open the URL Vite prints (normally `http://localhost:5173`). One server handles the SPA,
+history fallback, REST, and `/api/auth/*`. `vp install` runs `void prepare` to generate
+gitignored `.void` types; dev also applies local migrations. No Cloudflare login is needed.
+
+The three views contain plain translated text. Setup/sign-in forms and all styling are
+left to the designer. Auth clients, passkey/API-key client plugins, and navigation guards
+are wired in `src/api/auth.ts` and `src/router/index.ts`.
+
+```sh
+vp check         # format, lint and TypeScript checks
+vp run check     # the above plus vue-tsc for Vue templates
+vp test          # unit + real HTTP integration tests; no watch mode
+vp build         # dist/client assets + dist/ssr Cloudflare Worker
+```
+
+`vp check` is a built-in command, so it does not execute the identically named package
+script; use `vp run check` for the complete Vue check. TypeScript 6 is pinned because
+this vue-tsc release cannot load TypeScript 7. Tests start their own `vp dev` on a free
+port with temporary D1 persistence and delete that state afterwards.
+
+## Authentication
+
+`auth.ts` explicitly extends Void's Better Auth defaults with email/password, passkey,
+and API-key plugins. The user-create hook rejects sign-up after the first user. A unique
+SQLite expression index also prevents two concurrent initial sign-ups creating two users.
+API keys stay hashed; the creation response returns the plaintext key once.
+
+- Public `GET /api/v1/setup-status` returns `{ "needsSetup": true }` until setup completes.
+  This is the requested bootstrap exception to authenticated `/api/v1/*` routes.
+- `GET /api/v1/me` calls `server/auth-context.ts` and returns `{ id, email, name, via }`.
+- Session cookies give `via: "session"`. `Authorization: Bearer <key>` is verified with
+  Better Auth's server-only `verifyApiKey` and gives `via: "api_key"`.
+- An explicit invalid Authorization header fails with 401 even when a valid cookie exists.
+  API keys do not become browser sessions or gain access to session-only auth management.
+- API errors use `{ error: { code, message } }`; Better Auth's own endpoints retain its
+  standard error format. Authenticated responses and setup status use `Cache-Control: no-store`.
+
+Void 1.1.11 has no public getter for its Better Auth instance. The shared helper isolates
+the internal `c.get('__voidAuth')` access; the integration test exercises that seam. Recheck
+it on SDK upgrades. No alternate auth instance or duplicated password configuration exists.
+
+For passkeys, `rpID` defaults to the current request hostname and the expected origin
+defaults to the request origin. For local development use `http://localhost:5173`, with
+`rpID=localhost`. A remote browser needs HTTPS. To fix a canonical origin, create `.env`:
+
+```ini
+AUTH_ORIGIN=http://localhost:5173
+PASSKEY_RP_ID=localhost
+```
+
+For a tailnet preview use its full HTTPS origin (including its port) and hostname alone
+as the RP ID. For production use the deployed HTTPS origin and production hostname. Set
+production values with `pnpm void secret put AUTH_ORIGIN` and `pnpm void secret put PASSKEY_RP_ID`
+after connecting to the personal Cloudflare account. Changing the RP ID requires registering
+new passkeys. Void manages `BETTER_AUTH_SECRET` on deployment; dev supplies its own default.
+A local production preview needs an explicit `BETTER_AUTH_SECRET`.
+
+Void only supports a root `.env`: even `.env.example` is rejected when env.ts is present.
+Examples therefore live here. `.env` is gitignored and never uploaded by Void.
+
+## Database and migrations
+
+D1 is Void's default database: omit `database` in `void.config.ts` (`"d1"` is not a valid
+value; only external SQL dialects use that property). Local SQLite state is in `.void/`.
+`db/schema.ts` is empty for now; future domain tables use `void/schema-d1` and `void/db`.
+
+```sh
+pnpm void db generate             # auth + plugin + application schema -> SQL and metadata
+pnpm void gen migration name      # empty custom SQL migration, updates the journal
+pnpm void db migrate              # apply pending migrations locally, preserving data
+pnpm void db push                 # optional local prototyping without migration files
+pnpm void db execute 'SELECT count(*) AS users FROM "user"'
+pnpm void db reset --yes          # stop dev first; deletes LOCAL data, reapplies migrations
+```
+
+Review the generated SQL and `db/migrations/meta/` before the orchestrator commits them.
+Void includes Better Auth and configured plugin tables automatically, so do not copy them
+into `db/schema.ts` or run the Better Auth migration CLI. The checked-in migrations create
+`user`, `session`, `account`, `verification`, `passkey`, and `apikey`, followed by the one-user
+constraint. Dev applies pending local SQL and auth migrations; deploy applies migrations
+to the remote D1 database. Keep `--> statement-breakpoint` markers for custom SQL.
+
+The curl verification account was deleted with `pnpm void db reset --yes`; the next dev
+run starts with `needsSetup: true`. Tests never seed the normal development database.
+
+Money helpers store safe integer minor units and use the CHF/EUR/USD/GBP=2, JPY=0 table.
+`parseMoney` accepts an ungrouped decimal in the supplied locale and rejects excess precision
+instead of rounding. `formatMoney` uses Intl parts and integer arithmetic to retain cents.
+
+## Deploy later
+
+```sh
+pnpm void db generate
+# Review and commit migrations through the normal orchestrator workflow.
+pnpm void deploy --platform cloudflare
+# Or: vp run deploy
+```
+
+This targets the user's personal Cloudflare account, provisions D1, and applies migrations.
+The first deploy prompts for Cloudflare sign-in/account selection. Deployment setup was
+skipped during init so no account was authenticated. After saving the Cloudflare target,
+plain `pnpm void deploy` is equivalent. Commit `void.lock.json` after the first deployment.
+
+No deployment or Cloudflare authentication has been performed. Hardware-backed passkey
+registration and production Workers CPU usage remain to be checked in their real environments.
+See [the foundation verification report](docs/FOUNDATION.md) for versions, commands, outputs,
+the file tree, and the tailnet preview.

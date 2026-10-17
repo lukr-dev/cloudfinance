@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.void/
+.wrangler/
+.env
+.env.*
+*.local
+coverage/
+.vite/
+.void-wrangler.jsonc
+*.tsbuildinfo
+.DS_Store

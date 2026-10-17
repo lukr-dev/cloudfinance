@@ -1,0 +1,138 @@
+/*
+ * cloudfinance design tokens.
+ * Calm, paper-like neutrals, a single deep-green accent, hairline structure.
+ * Theme: `data-theme="light" | "dark"` on <html>; "system" resolves to one of them in JS.
+ */
+
+:root {
+  /* Typography */
+  --font-sans: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Outfit", var(--font-sans);
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --text-xs: 0.75rem; /* 12 — eyebrows, footnotes */
+  --text-sm: 0.8125rem; /* 13 — table meta, labels */
+  --text-md: 0.9375rem; /* 15 — body, table rows */
+  --text-lg: 1.0625rem; /* 17 — section titles */
+  --text-xl: 1.5rem; /* 24 — page titles */
+  --text-hero: 3.5rem; /* 56 — the one figure */
+
+  --leading-tight: 1.15;
+  --leading-normal: 1.5;
+
+  /* Spacing (4px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Shape */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* Layout */
+  --sidebar-width: 248px;
+  --inspector-width: 320px;
+  --topbar-height: 64px;
+  --row-height: 48px;
+  --content-max: 1120px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+
+  /* Category palette — muted, distinguishable in both themes */
+  --cat-teal: #1aa3a3;
+  --cat-orange: #e8772e;
+  --cat-pink: #d6458b;
+  --cat-indigo: #5a63d8;
+  --cat-violet: #9156d6;
+  --cat-amber: #e0a21a;
+  --cat-red: #d9454f;
+  --cat-green: #4f9d3a;
+  --cat-blue: #2f7fd1;
+  --cat-slate: #7b8794;
+}
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-canvas: #fcfcfa; /* main content */
+  --surface-sunken: #f4f3ef; /* sidebar, inspector */
+  --surface-raised: #ffffff; /* popovers, dialogs, inputs */
+  --surface-hover: rgba(28, 26, 23, 0.045);
+  --surface-active: rgba(28, 26, 23, 0.075);
+
+  --border: #e7e5df;
+  --border-strong: #d7d4cc;
+
+  --text: #1c1a17;
+  --text-muted: #5f5b53;
+  --text-faint: #8f8a80;
+  --text-inverse: #fbfaf7;
+
+  --ink: #14181f; /* primary buttons, selected segments */
+  --ink-hover: #262c36;
+
+  --accent: #17705f; /* links, focus, progress */
+  --accent-hover: #0f5a4c;
+  --accent-soft: #e3efea;
+
+  --positive: #1d7a4b;
+  --positive-soft: #e3f1e8;
+  --negative: #c0412c;
+  --negative-soft: #fae6e1;
+  --caution: #9a6400;
+  --caution-soft: #f8edd6;
+
+  --track: #ebe9e3; /* progress track */
+  --focus-ring: 0 0 0 3px rgba(23, 112, 95, 0.22);
+  --shadow-pop: 0 1px 2px rgba(20, 18, 15, 0.06), 0 8px 24px rgba(20, 18, 15, 0.08);
+  --shadow-card: 0 1px 2px rgba(20, 18, 15, 0.04);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-canvas: #131514;
+  --surface-sunken: #0e100f;
+  --surface-raised: #1a1d1b;
+  --surface-hover: rgba(236, 235, 230, 0.05);
+  --surface-active: rgba(236, 235, 230, 0.09);
+
+  --border: #252927;
+  --border-strong: #343935;
+
+  --text: #ecebe6;
+  --text-muted: #a9a69d;
+  --text-faint: #77746c;
+  --text-inverse: #121413;
+
+  --ink: #ecebe6;
+  --ink-hover: #ffffff;
+
+  --accent: #52c2a4;
+  --accent-hover: #74d3b9;
+  --accent-soft: rgba(82, 194, 164, 0.12);
+
+  --positive: #63cf91;
+  --positive-soft: rgba(99, 207, 145, 0.12);
+  --negative: #f08a74;
+  --negative-soft: rgba(240, 138, 116, 0.13);
+  --caution: #e8b44f;
+  --caution-soft: rgba(232, 180, 79, 0.13);
+
+  --track: #232725;
+  --focus-ring: 0 0 0 3px rgba(82, 194, 164, 0.28);
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-card: none;
+}
