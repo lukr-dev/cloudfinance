@@ -12,3 +12,6 @@ export async function getMe() {
   if (!response.ok) throw new Error("Could not load current user.");
   return authContextSchema.parse(await response.json());
 }
+
+export { fetch, FetchError } from "void/client";
+export type * from "../../shared/schemas";
