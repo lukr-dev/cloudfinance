@@ -1,0 +1,213 @@
+import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
+import { z } from "zod";
+import type { AuthContext } from "../shared/auth";
+import * as s from "../shared/schemas";
+import * as settings from "./settings";
+import * as accounts from "./accounts";
+import * as categories from "./categories";
+import * as budget from "./budget";
+import * as transactions from "./transactions";
+import { listPayees } from "./payees";
+import { listAuditEvents } from "./audit";
+import { DomainError } from "./errors";
+export function mcpHandler(auth: AuthContext) {
+  return createMcpHandler(
+    () => {
+      const server = new McpServer({ name: "cloudfinance", version: "1.0.0" });
+      function tool<S extends z.ZodType>(
+        name: string,
+        description: string,
+        schema: S,
+        run: (input: z.output<S>) => Promise<unknown>,
+        readOnly = false,
+        idempotent = false,
+        destructive = false,
+      ) {
+        server.registerTool<z.ZodType, z.ZodType>(
+          name,
+          {
+            description,
+            inputSchema: schema,
+            annotations: {
+              readOnlyHint: readOnly,
+              idempotentHint: readOnly || idempotent,
+              destructiveHint: destructive,
+              openWorldHint: false,
+            },
+          },
+          async (args) => {
+            try {
+              const result = await run(schema.parse(args));
+              // structuredContent must be a JSON object; text mirrors it for clients that ignore it.
+              const structured = (
+                Array.isArray(result) ? { items: result } : (result ?? { ok: true })
+              ) as Record<string, unknown>;
+              return {
+                content: [{ type: "text", text: JSON.stringify(structured) }],
+                structuredContent: structured,
+              };
+            } catch (error) {
+              if (error instanceof DomainError)
+                return {
+                  isError: true,
+                  content: [{ type: "text", text: error.message }],
+                  structuredContent: { error: { code: error.code, message: error.message } },
+                };
+              throw error;
+            }
+          },
+        );
+      }
+      const units =
+        "All money is signed integer minor units (CHF 100 = CHF 1.00): negative outflow, positive inflow. Budgets are independent per currency; no FX conversion. ";
+      const month = s.monthParamsSchema.extend({ currency: s.currencySchema.optional() });
+      tool(
+        "get_settings",
+        "Read preferences and enabled currencies.",
+        s.emptySchema,
+        () => settings.getSettings(auth),
+        true,
+      );
+      tool(
+        "update_settings",
+        "Update locale, theme and enabled currencies. Base currency must be enabled.",
+        s.settingsUpdateSchema,
+        (x) => settings.updateSettings(auth, x),
+        false,
+        true,
+      );
+      tool(
+        "list_accounts",
+        units + "List accounts with total, cleared and uncleared balances.",
+        z.object({ include_closed: z.boolean().optional() }),
+        (x) => accounts.listAccounts(auth, x.include_closed),
+        true,
+      );
+      tool(
+        "create_account",
+        "Create an account in an enabled currency. on_budget=false creates a tracking account.",
+        s.accountCreateSchema,
+        (x) => accounts.createAccount(auth, x),
+      );
+      tool(
+        "update_account",
+        "Rename, sort, close or reopen an account. Currency/budget status cannot change after transactions exist.",
+        s.accountUpdateSchema.extend({ id: s.idSchema }),
+        ({ id, ...x }) => accounts.updateAccount(auth, id, x),
+        false,
+        true,
+      );
+      tool(
+        "list_categories",
+        "List shared categories including the immutable income system category (Ready to Assign).",
+        s.emptySchema,
+        () => categories.listCategories(auth),
+        true,
+      );
+      tool("create_category_group", "Create a category group.", s.groupCreateSchema, (x) =>
+        categories.createGroup(auth, x),
+      );
+      tool(
+        "create_category",
+        "Create an expense category. Colors default in round-robin order.",
+        s.categoryCreateSchema,
+        (x) => categories.createCategory(auth, x),
+      );
+      tool(
+        "update_category",
+        "Update an expense category. System income category is immutable.",
+        s.categoryUpdateSchema.extend({ id: s.idSchema }),
+        ({ id, ...x }) => categories.updateCategory(auth, id, x),
+        false,
+        true,
+      );
+      tool(
+        "get_budget_month",
+        units +
+          "Get YYYY-MM budget with full rollover including negatives. Ready to Assign subtracts all assignments, including future months.",
+        month,
+        (x) => budget.getBudgetMonth(auth, x.month, x.currency),
+        true,
+      );
+      tool(
+        "get_category_month",
+        units +
+          "Inspect a YYYY-MM category, previous month and 3-month spending average; up to 20 transactions.",
+        month.extend({ id: s.idSchema }),
+        (x) => budget.getCategoryMonth(auth, x.month, x.id, x.currency),
+        true,
+      );
+      tool(
+        "assign_to_category",
+        units +
+          "Set the absolute assignment for category/currency in YYYY-MM. Repeating this call does not add money twice.",
+        s.assignmentSchema.extend({ month: s.monthSchema, category_id: s.idSchema }),
+        (x) => budget.assignToCategory(auth, x.month, x.category_id, x),
+        false,
+        true,
+      );
+      tool(
+        "move_money",
+        units +
+          "Move a positive amount between two category assignments in YYYY-MM; total assigned is unchanged.",
+        s.moveSchema.extend({ month: s.monthSchema }),
+        (x) => budget.moveMoney(auth, x.month, x),
+      );
+      // Query booleans are native JSON booleans in MCP, strings in REST URLs.
+      tool(
+        "list_transactions",
+        units +
+          "List newest first using an opaque keyset cursor; filter by account/category/date/payee or uncategorized.",
+        s.transactionQuerySchema
+          .omit({ uncategorized: true })
+          .extend({ uncategorized: z.boolean().optional() }),
+        (x) => transactions.listTransactions(auth, x),
+        true,
+      );
+      tool(
+        "create_transactions",
+        units +
+          "Create up to 500 transactions atomically; invalid items roll back the batch. Use external_id for idempotent retry per account. Transfers create linked legs: same currency requires opposite equal amounts; cross-currency requires transfer_amount_minor of opposite sign and defaults both categories to income. Tracking transfers require the on-budget category (category_id or transfer_category_id). Source is mcp.",
+        s.transactionBatchSchema,
+        (x) => transactions.createTransactions(auth, x, "mcp"),
+        false,
+        false,
+      );
+      tool(
+        "update_transaction",
+        units +
+          "Update a transaction and its linked transfer. Cross-currency amount edits require both amounts.",
+        s.transactionUpdateSchema.extend({ id: s.idSchema }),
+        ({ id, ...x }) => transactions.updateTransaction(auth, id, x),
+        false,
+        true,
+      );
+      tool(
+        "delete_transaction",
+        "Delete a transaction and its linked transfer leg.",
+        s.idParamsSchema,
+        (x) => transactions.deleteTransaction(auth, x.id),
+        false,
+        true,
+        true,
+      );
+      tool(
+        "list_payees",
+        "Autocomplete distinct payee names.",
+        s.payeeQuerySchema,
+        (x) => listPayees(auth, x.q),
+        true,
+      );
+      tool(
+        "list_audit_events",
+        "List newest audit events including user or API-key actor IDs.",
+        s.pageQuerySchema,
+        (x) => listAuditEvents(auth, x),
+        true,
+      );
+      return server;
+    },
+    // Serve 2026-07-28 natively; 2025-era clients get stateless per-request serving.
+    { legacy: "stateless" },
+  );
+}

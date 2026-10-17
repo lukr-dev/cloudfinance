@@ -1,9 +1,10 @@
+import { backendSmoke } from "./backend-smoke";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, cp, symlink } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { afterAll, beforeAll, expect, it } from "vite-plus/test";
 
@@ -14,6 +15,16 @@ let logs = "";
 
 beforeAll(async () => {
   state = await mkdtemp(join(tmpdir(), "cloudfinance-test-"));
+  const project = join(state, "project");
+  // Separate generated Void metadata and file watching from other dev servers/design edits.
+  await cp(process.cwd(), project, {
+    recursive: true,
+    filter: (path) =>
+      !["node_modules", ".git", ".void", "dist"].some(
+        (name) => path === resolve(name) || path.startsWith(resolve(name) + "/"),
+      ),
+  });
+  await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   const listener = createServer();
   listener.listen(0, "127.0.0.1");
   await once(listener, "listening");
@@ -23,12 +34,13 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => listener.close(() => resolve()));
   base = `http://127.0.0.1:${port}`;
   child = spawn("vp", ["dev", "--port", String(port), "--strictPort"], {
+    cwd: project,
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
       NODE_ENV: "development",
-      CLOUDFINANCE_TEST_STATE: state,
+      CLOUDFINANCE_TEST_STATE: join(state, "d1"),
       AUTH_ORIGIN: base,
       PASSKEY_RP_ID: "127.0.0.1",
     },
@@ -75,6 +87,12 @@ it("serves the SPA and resolves cookie and verified API-key users, closing sign-
   expect((await request("/api/v1/me")).status).toBe(401);
   expect(await (await request("/")).text()).toContain("/src/main.ts");
   expect((await request("/setup", { headers: { Accept: "text/html" } })).status).toBe(200);
+  // Deep links must serve the SPA shell directly, not redirect to "/".
+  for (const path of ["/settings", "/budget/2026-09", "/transactions"]) {
+    const deep = await request(path, { headers: { Accept: "text/html" }, redirect: "manual" });
+    expect(deep.status).toBe(200);
+    expect(await deep.text()).toContain('<div id="app">');
+  }
 
   const credentials = {
     email: "owner@example.com",
@@ -124,6 +142,8 @@ it("serves the SPA and resolves cookie and verified API-key users, closing sign-
   });
   expect(passkeys.status).toBe(200);
   expect(await passkeys.json()).toEqual([]);
+
+  await backendSmoke(base, key.key, key.id, cookie);
 
   expect((await post("/api/auth/api-key/delete", { keyId: key.id }, cookie)).status).toBe(200);
   expect(

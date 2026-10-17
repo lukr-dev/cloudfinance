@@ -4,5 +4,8 @@ import { defineConfig } from "void/config";
 export default defineConfig({
   worker: { compatibility_date: "2026-10-17" },
   inference: { appType: "void" },
-  routing: { notFound: "single-page-application" },
+  // Client-side routes fall back to the SPA shell. "none" keeps intentional API 404s intact
+  // (SPA mode would turn them into index.html), and the target is "/" rather than
+  // "/index.html" because the asset layer answers "/index.html" with a 307 to "/".
+  routing: { notFound: "none", fallbacks: { "/*": "/" } },
 });

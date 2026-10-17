@@ -18,6 +18,8 @@ function unauthorized(): never {
 
 export async function requireAuthContext(c: CloudContext): Promise<AuthContext> {
   c.header("Cache-Control", "no-store");
+  const cached = c.get("financeAuth") as AuthContext | undefined;
+  if (cached) return cached;
   const authorization = c.req.header("Authorization");
   if (authorization !== undefined) {
     const token = /^Bearer ([^\s]+)$/i.exec(authorization)?.[1];
@@ -31,9 +33,18 @@ export async function requireAuthContext(c: CloudContext): Promise<AuthContext> 
       sql`SELECT id, email, name FROM "user" WHERE id = ${result.key.referenceId}`,
     );
     if (!user) unauthorized();
-    return { ...user, via: "api_key" };
+    const context: AuthContext = {
+      ...user,
+      via: "api_key",
+      api_key_id: result.key.id,
+      api_key_name: result.key.name,
+    };
+    c.set("financeAuth", context);
+    return context;
   }
   const user = getUser();
   if (!user) unauthorized();
-  return { id: user.id, email: user.email, name: user.name, via: "session" };
+  const context: AuthContext = { id: user.id, email: user.email, name: user.name, via: "session" };
+  c.set("financeAuth", context);
+  return context;
 }

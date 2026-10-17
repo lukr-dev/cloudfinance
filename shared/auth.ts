@@ -6,5 +6,7 @@ export const authContextSchema = z.object({
   email: z.email(),
   name: z.string(),
   via: z.enum(["session", "api_key"]),
+  api_key_id: z.string().optional(),
+  api_key_name: z.string().nullable().optional(),
 });
 export type AuthContext = z.infer<typeof authContextSchema>;
