@@ -21,15 +21,6 @@ jobs:
       url: https://cloudfinance.toastnet.work
     steps:
       - uses: actions/checkout@v4
-      - name: Detect first deployment
-        id: lock
-        run: |
-          if [ -s void.lock.json ]; then
-            echo "bootstrap=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "bootstrap=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::No void.lock.json yet: this run provisions production and uploads the lock as an artifact."
-          fi
       - uses: voidzero-dev/setup-vp@v1.21.2
         with:
           node-version-file: .node-version
@@ -49,16 +40,16 @@ jobs:
         run: |
           : "${CLOUDFLARE_API_TOKEN:?Set the CLOUDFLARE_API_TOKEN repository secret}"
           : "${CLOUDFLARE_ACCOUNT_ID:?Set the CLOUDFLARE_ACCOUNT_ID repository variable}"
+          pnpm void connect --platform cloudflare </dev/null
           pnpm void deploy --platform cloudflare </dev/null
       - name: Store the setup token as a Worker secret
-        if: steps.lock.outputs.bootstrap == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           SETUP_TOKEN: ${{ secrets.SETUP_TOKEN }}
           CI: "true"
         run: |
-          : "${SETUP_TOKEN:?Set the SETUP_TOKEN repository secret before the first deployment}"
+          : "${SETUP_TOKEN:?Set the SETUP_TOKEN repository secret}"
           printf '%s' "$SETUP_TOKEN" | pnpm void secret put SETUP_TOKEN
       - name: Upload void.lock.json
         if: always() && hashFiles('void.lock.json') != ''

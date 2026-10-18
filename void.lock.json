@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "source": {
+    "name": "cloudfinance",
+    "account_id": "7979b4f7816680c8ba9be80700d1abe4",
+    "routes": [
+      {
+        "pattern": "cloudfinance.toastnet.work",
+        "custom_domain": true
+      }
+    ],
+    "vars": {
+      "AUTH_ORIGIN": "https://cloudfinance.toastnet.work",
+      "PASSKEY_RP_ID": "cloudfinance.toastnet.work"
+    },
+    "workers_dev": false,
+    "preview_urls": false,
+    "version_metadata": {
+      "binding": "CLOUDFLARE_VERSION_METADATA"
+    }
+  },
+  "resolved": {
+    "name": "cloudfinance",
+    "account_id": "7979b4f7816680c8ba9be80700d1abe4",
+    "routes": [
+      {
+        "pattern": "cloudfinance.toastnet.work",
+        "custom_domain": true
+      }
+    ],
+    "vars": {
+      "AUTH_ORIGIN": "https://cloudfinance.toastnet.work",
+      "PASSKEY_RP_ID": "cloudfinance.toastnet.work"
+    },
+    "workers_dev": false,
+    "preview_urls": false,
+    "version_metadata": {
+      "binding": "CLOUDFLARE_VERSION_METADATA"
+    },
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "cloudfinance-db",
+        "database_id": "bf181260-ab11-41fe-b279-f6da0efbf8cf",
+        "migrations_dir": "./db/migrations"
+      }
+    ]
+  },
+  "text": "{\n  \"name\": \"cloudfinance\",\n  \"account_id\": \"7979b4f7816680c8ba9be80700d1abe4\",\n  \"routes\": [\n    {\n      \"pattern\": \"cloudfinance.toastnet.work\",\n      \"custom_domain\": true\n    }\n  ],\n  \"vars\": {\n    \"AUTH_ORIGIN\": \"https://cloudfinance.toastnet.work\",\n    \"PASSKEY_RP_ID\": \"cloudfinance.toastnet.work\"\n  },\n  \"workers_dev\": false,\n  \"preview_urls\": false,\n  \"version_metadata\": {\n    \"binding\": \"CLOUDFLARE_VERSION_METADATA\"\n  },\n  \"d1_databases\": [\n    {\n      \"binding\": \"DB\",\n      \"database_name\": \"cloudfinance-db\",\n      \"database_id\": \"bf181260-ab11-41fe-b279-f6da0efbf8cf\",\n      \"migrations_dir\": \"./db/migrations\"\n    }\n  ]\n}\n"
+}
