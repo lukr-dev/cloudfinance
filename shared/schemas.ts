@@ -39,7 +39,14 @@ export const accountQuerySchema = z.object({ include_closed: boolQuerySchema.opt
 export const settingsUpdateSchema = z
   .object({
     base_currency: currencySchema.optional(),
-    enabled_currencies: z.array(currencySchema).min(1).max(5).optional(),
+    enabled_currencies: z
+      .array(currencySchema)
+      .min(1)
+      .max(Object.keys(currencyExponents).length)
+      .refine((currencies) => new Set(currencies).size === currencies.length, {
+        message: "Enabled currencies must be unique.",
+      })
+      .optional(),
     locale: z.enum(["de", "en"]).optional(),
     theme: z.enum(["light", "dark", "system"]).optional(),
   })

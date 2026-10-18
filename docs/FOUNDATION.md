@@ -397,7 +397,11 @@ The global asset SPA fallback converted handled API 404s to HTML in Void 1.1.11.
 
 The implementation uses `@modelcontextprotocol/server` 2.3.1 and its official
 web-standard `createMcpHandler`, with a fresh server per request and
-`legacy: "reject"`. Cloudflare's `agents` wrapper and Durable Objects are unnecessary.
+`legacy: "reject"`. Only 2026-07-28 is supported over POST; legacy initialize requests
+receive HTTP 400 with the unsupported-protocol-version error (-32022). GET and DELETE
+return HTTP 405 because modern MCP has no GET stream or protocol-level sessions. Explicit
+GET/DELETE route exports prevent Void's SPA fallback from returning HTML for these methods;
+the strict SDK handler rejects them. Cloudflare's `agents` wrapper and Durable Objects are unnecessary.
 This follows the [2026-07-28 changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog)
 and the upstream fetch-handler pattern described in [Cloudflare's MCP v2 guide](https://blog.cloudflare.com/mcp-v2/).
 

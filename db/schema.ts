@@ -67,7 +67,6 @@ export const accounts = sqliteTable(
       sql`${t.type} IN ('checking','savings','credit_card','cash','investment','other')`,
     ),
     check("accounts_boolean", sql`${t.on_budget} IN (0,1)`),
-    check("accounts_currency", sql`${t.currency} IN ('CHF','EUR','USD','GBP','JPY')`),
   ],
 );
 export const categoryGroups = sqliteTable(
@@ -148,7 +147,6 @@ export const budgetAssignments = sqliteTable(
       "assignments_amount",
       sql`typeof(${t.amount_minor})='integer' AND abs(${t.amount_minor})<=9007199254740991`,
     ),
-    check("assignments_currency", sql`${t.currency} IN ('CHF','EUR','USD','GBP','JPY')`),
   ],
 );
 export const transactions = sqliteTable(

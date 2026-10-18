@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { currencyExponents, parseMoney } from "../shared/money";
 import type {
   Account,
   Category,
@@ -251,6 +252,40 @@ export async function backendSmoke(
     "REST smoke: 4 accounts, starter categories, 12 transaction legs, all three transfer kinds, assignments, balances, inspector, validation and pagination passed.",
   );
   log("REST budget CHF 2026-08: " + JSON.stringify(expected));
+  const legacy = await fetch(base + "/mcp", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "legacy-smoke", version: "1.0.0" },
+      },
+    }),
+  });
+  assert.equal(legacy.status, 400);
+  const rejectedLegacy = (await legacy.json()) as {
+    id: number;
+    error: { code: number; message: string; data: { supported: string[]; requested: string } };
+  };
+  assert.equal(rejectedLegacy.id, 1);
+  assert.equal(rejectedLegacy.error.code, -32022);
+  assert.match(rejectedLegacy.error.message, /Unsupported protocol version/);
+  assert.deepEqual(rejectedLegacy.error.data, {
+    supported: ["2026-07-28"],
+    requested: "2025-11-25",
+  });
+  assert.equal(legacy.headers.get("Mcp-Session-Id"), null);
+  log(
+    "MCP legacy initialize: HTTP 400, unsupported-protocol-version (-32022); only 2026-07-28 supported.",
+  );
   const wireRequests: string[] = [];
   const client = new Client(
     { name: "cloudfinance-smoke", version: "1.0.0" },
@@ -350,4 +385,59 @@ export async function backendSmoke(
   await request("/accounts/" + second.id, "PATCH", { closed_at: new Date().toISOString() });
   assert.equal((await request<Account[]>("/accounts")).length, 3);
   assert.equal((await request<Account[]>("/accounts?include_closed=true")).length, 4);
+  assert.equal(
+    (await request<ApiError>("/settings", "PATCH", { enabled_currencies: [] }, 400)).error.code,
+    "VALIDATION_FAILED",
+  );
+  assert.equal(
+    (await request<ApiError>("/settings", "PATCH", { enabled_currencies: ["CHF", "CHF"] }, 400))
+      .error.code,
+    "VALIDATION_FAILED",
+  );
+  assert.equal(
+    (await request<ApiError>("/settings", "PATCH", { enabled_currencies: ["EUR"] }, 400)).error
+      .code,
+    "CURRENCY_NOT_ENABLED",
+  );
+  assert.equal(
+    (await request<ApiError>("/settings", "PATCH", { base_currency: "KWD" }, 400)).error.code,
+    "CURRENCY_NOT_ENABLED",
+  );
+  const enabled = Object.keys(currencyExponents);
+  assert.deepEqual(
+    (await request<Settings>("/settings", "PATCH", { enabled_currencies: enabled }))
+      .enabled_currencies,
+    enabled,
+  );
+  for (const [currency, amount] of [
+    ["SEK", "12.34"],
+    ["KWD", "-12.345"],
+  ] as const) {
+    const foreign = await request<Account>("/accounts", "POST", {
+      name: currency,
+      type: "checking",
+      currency,
+    });
+    const amount_minor = parseMoney(amount, currency);
+    const result = await request<TransactionResult>("/transactions", "POST", {
+      account_id: foreign.id,
+      currency,
+      date: "2026-08-09",
+      amount_minor,
+      category_id: income,
+    });
+    assert.equal(result.created[0]!.amount_minor, amount_minor);
+    const saved = await request<TransactionList>("/transactions?account_id=" + foreign.id);
+    assert.equal(saved.transactions.length, 1);
+    assert.equal(saved.transactions[0]!.currency, currency);
+    assert.equal(saved.transactions[0]!.amount_minor, amount_minor);
+    assert.equal((await request<Account>("/accounts/" + foreign.id)).balance_minor, amount_minor);
+    await request(`/budget/2026-08/assignments/${other}`, "PUT", { currency, amount_minor: 1 });
+    const budget = await request<BudgetMonth>("/budget/2026-08?currency=" + currency);
+    assert.equal(budget.ready_to_assign_minor, amount_minor - 1);
+    assert.equal(budget.assigned_this_month_minor, 1);
+  }
+  log(
+    "REST currencies: all 155 enabled; SEK/KWD accounts, transaction minor units, balances and assignments round-trip; empty/duplicate lists and disabled base currencies rejected.",
+  );
 }

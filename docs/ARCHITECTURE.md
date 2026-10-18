@@ -146,8 +146,8 @@ JSON in and out; amounts in minor units; errors are `{ error: { code, message, d
 
 - Spec **2026-07-28** (stateless; no session handshake). Official TypeScript SDK
   (`@modelcontextprotocol/server`) and, if it fits Void, Cloudflare `agents` `createMcpHandler`.
-- Older clients that still speak 2025-11-25 Streamable HTTP are served statelessly via the
-  SDK's legacy fallback, so agents that haven't upgraded keep working.
+- Only **2026-07-28** is supported, over POST. Legacy requests receive the
+  unsupported-protocol-version error and must upgrade. GET and DELETE are not supported.
 - Tool results: `structuredContent` is always a JSON object (lists are wrapped as `{ items }`)
   and is mirrored as JSON text for clients that only read `content`.
 - Auth: the same API key as REST, `Authorization: Bearer <key>`. OAuth is Phase 2.

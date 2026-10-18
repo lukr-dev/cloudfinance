@@ -2,13 +2,14 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
-import { currencyExponents } from "../../shared/money";
 import type { Settings } from "../../shared/schemas";
 import { auth } from "../api/auth";
 import PageLayout from "../components/layout/PageLayout.vue";
+import CurrencyPicker from "../components/settings/CurrencyPicker.vue";
 import IconButton from "../components/ui/IconButton.vue";
 import SegmentedControl from "../components/ui/SegmentedControl.vue";
 import UiButton from "../components/ui/UiButton.vue";
+import { currencyName, type CurrencyCode } from "../composables/currencies";
 import { useErrorToast } from "../composables/errors";
 import type { ThemePreference } from "../composables/theme";
 import { formatDateTime } from "../composables/time";
@@ -35,12 +36,8 @@ const { push } = useToasts();
 const showError = useErrorToast();
 
 const passkeys = ref<PasskeyRow[]>([]);
-const addCurrency = ref("");
-const allCurrencies = Object.keys(currencyExponents) as Currency[];
+const pickerOpen = ref(false);
 const s = computed(() => settings.settings!);
-const available = computed(() =>
-  allCurrencies.filter((c) => !s.value.enabled_currencies.includes(c)),
-);
 
 async function save(patch: Parameters<typeof settings.update>[0]) {
   try {
@@ -61,10 +58,8 @@ const themeModel = computed({
   set: (value: ThemePreference) => void save({ theme: value }),
 });
 
-function enable() {
-  if (!addCurrency.value) return;
-  void save({ enabled_currencies: [...s.value.enabled_currencies, addCurrency.value as Currency] });
-  addCurrency.value = "";
+function enable(code: CurrencyCode) {
+  void save({ enabled_currencies: [...s.value.enabled_currencies, code as Currency] });
 }
 function disable(currency: Currency) {
   void save({ enabled_currencies: s.value.enabled_currencies.filter((c) => c !== currency) });
@@ -134,7 +129,9 @@ async function signOut() {
               save({ base_currency: ($event.target as HTMLSelectElement).value as Currency })
             "
           >
-            <option v-for="c in s.enabled_currencies" :key="c" :value="c">{{ c }}</option>
+            <option v-for="c in settings.currencies" :key="c" :value="c">
+              {{ c }} · {{ currencyName(c, locale) }}
+            </option>
           </select>
         </div>
 
@@ -144,7 +141,12 @@ async function signOut() {
             <p>{{ t("settings.currenciesHint") }}</p>
           </div>
           <div class="currencies">
-            <span v-for="c in settings.currencies" :key="c" class="chip">
+            <span
+              v-for="c in settings.currencies"
+              :key="c"
+              class="chip"
+              :title="currencyName(c, locale)"
+            >
               {{ c }}
               <IconButton
                 v-if="c !== s.base_currency"
@@ -154,16 +156,9 @@ async function signOut() {
                 @click="disable(c)"
               />
             </span>
-            <select
-              v-if="available.length"
-              v-model="addCurrency"
-              class="input narrow"
-              :aria-label="t('settings.addCurrency')"
-              @change="enable"
-            >
-              <option value="">+ {{ t("settings.addCurrency") }}</option>
-              <option v-for="c in available" :key="c" :value="c">{{ c }}</option>
-            </select>
+            <UiButton size="sm" icon="plus" @click="pickerOpen = true">
+              {{ t("settings.addCurrency") }}
+            </UiButton>
           </div>
         </div>
       </section>
@@ -217,6 +212,7 @@ async function signOut() {
         </div>
       </section>
     </div>
+    <CurrencyPicker v-model:open="pickerOpen" :enabled="s.enabled_currencies" @pick="enable" />
   </PageLayout>
 </template>
 

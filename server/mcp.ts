@@ -207,7 +207,6 @@ export function mcpHandler(auth: AuthContext) {
       );
       return server;
     },
-    // Serve 2026-07-28 natively; 2025-era clients get stateless per-request serving.
-    { legacy: "stateless" },
+    { legacy: "reject" },
   );
 }

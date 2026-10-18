@@ -126,11 +126,19 @@ const groupDialog = ref({ open: false, groupId: null as string | null });
         />
       </div>
       <SegmentedControl
-        v-if="settings.currencies.length > 1"
+        v-if="settings.currencies.length > 1 && settings.currencies.length <= 4"
         v-model="currencyModel"
         :label="t('budget.currency')"
         :options="settings.currencies.map((c) => ({ value: c, label: c }))"
       />
+      <select
+        v-else-if="settings.currencies.length > 4"
+        v-model="currencyModel"
+        class="input currency-select"
+        :aria-label="t('budget.currency')"
+      >
+        <option v-for="c in settings.currencies" :key="c" :value="c">{{ c }}</option>
+      </select>
       <span class="divider" />
       <UiButton variant="primary" icon="plus" @click="ui.openTransaction()">{{
         t("transactions.add")
@@ -244,6 +252,13 @@ const groupDialog = ref({ open: false, groupId: null as string | null });
 }
 .month-label:hover {
   background: var(--surface-hover);
+}
+.currency-select {
+  width: auto;
+  height: 32px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 .divider {
   width: 1px;

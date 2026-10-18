@@ -32,5 +32,6 @@ const handle = defineHandler(async (c) => {
   }
 });
 export const POST = handle;
+// Explicit routes prevent Void's SPA fallback; the strict SDK handler returns HTTP 405.
 export const GET = handle;
 export const DELETE = handle;
