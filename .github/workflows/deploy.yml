@@ -40,7 +40,9 @@ jobs:
         run: |
           : "${CLOUDFLARE_API_TOKEN:?Set the CLOUDFLARE_API_TOKEN repository secret}"
           : "${CLOUDFLARE_ACCOUNT_ID:?Set the CLOUDFLARE_ACCOUNT_ID repository variable}"
-          pnpm void connect --platform cloudflare </dev/null
+          # Void 1.1.11 connect requires account discovery; CI already pins the account.
+          mkdir -p .void
+          printf '%s\n' '{"platform":"cloudflare"}' > .void/project.json
           pnpm void deploy --platform cloudflare </dev/null
       - name: Store the setup token as a Worker secret
         env:
