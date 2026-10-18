@@ -61,7 +61,7 @@ export async function startDevServer(env: NodeJS.ProcessEnv = {}) {
     }
     try {
       const response = await fetch(`${base}/api/v1/setup-status`);
-      if (response.ok) return { base, stop };
+      if (response.ok) return { base, stop, state: join(state, "d1") };
     } catch {
       /* Wait for Vite and local D1 to start. */
     }

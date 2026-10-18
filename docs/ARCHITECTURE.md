@@ -35,6 +35,11 @@ Free-tier notes: Workers free plan = ~10 ms CPU per request. Keep request handle
   plaintext key is shown once. Sent as `Authorization: Bearer <key>`.
 - Every `/api/v1/*` and `/mcp` request must resolve to the user, either from the session cookie
   or from an API key. Anything else → 401.
+- A valid API key at its rate limit returns 429 with code `RATE_LIMITED` and a
+  `Retry-After` header in seconds (MCP puts the code in JSON-RPC `error.data.code`).
+  REST and MCP share the key's quota: 120 accepted requests, resetting after a
+  60-second gap since the last accepted request in the installed Better Auth plugin.
+  Clients should wait for `Retry-After` and reuse the same key; invalid or revoked keys remain 401.
 - All domain rows carry `user_id` and every query is scoped by it. Single-user today, but we
   don't want a painful migration if that changes.
 

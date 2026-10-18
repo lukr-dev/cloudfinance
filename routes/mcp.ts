@@ -11,21 +11,31 @@ const handle = defineHandler(async (c) => {
     await getSettings(auth);
     return await mcpHandler(auth).fetch(c.req.raw);
   } catch (error) {
-    if (error instanceof HTTPException && error.status === 401) {
+    if (error instanceof HTTPException && (error.status === 401 || error.status === 429)) {
       // Drain without buffering so the local Worker proxy can complete rejected POSTs.
       await c.req.raw.body?.pipeTo(new WritableStream());
+      const response = error.getResponse();
+      const failure =
+        error.status === 429
+          ? ((await response.json()) as { error: { code: string; message: string } }).error
+          : { code: "UNAUTHORIZED", message: "Authentication required." };
       return c.json(
         {
           jsonrpc: "2.0",
           id: null,
           error: {
             code: -32000,
-            message: "Authentication required.",
-            data: { code: "UNAUTHORIZED" },
+            message: failure.message,
+            data: { code: failure.code },
           },
         },
-        401,
-        { "WWW-Authenticate": "Bearer", "Cache-Control": "no-store" },
+        error.status,
+        {
+          "Cache-Control": "no-store",
+          ...(error.status === 429
+            ? { "Retry-After": response.headers.get("Retry-After")! }
+            : { "WWW-Authenticate": "Bearer" }),
+        },
       );
     }
     throw error;

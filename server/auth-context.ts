@@ -28,6 +28,29 @@ export async function requireAuthContext(c: CloudContext): Promise<AuthContext> 
     const auth = c.get("__voidAuth") as ApiKeyAuth | undefined;
     if (!auth?.api.verifyApiKey) throw new Error("Void auth runtime is unavailable.");
     const result = await auth.api.verifyApiKey({ body: { key: token } });
+    if (!result.valid && result.error?.code === "RATE_LIMITED") {
+      // Better Auth returns details at runtime but omits them from verifyApiKey's type.
+      const milliseconds = (result.error as { details?: { tryAgainIn?: unknown } }).details
+        ?.tryAgainIn;
+      const retryAfter =
+        typeof milliseconds === "number" && Number.isFinite(milliseconds)
+          ? Math.max(1, Math.ceil(milliseconds / 1000))
+          : 60;
+      throw new HTTPException(429, {
+        res: Response.json(
+          {
+            error: {
+              code: "RATE_LIMITED",
+              message: "API key rate limit exceeded. Retry after the indicated delay.",
+            },
+          },
+          {
+            status: 429,
+            headers: { "Retry-After": String(retryAfter), "Cache-Control": "no-store" },
+          },
+        ),
+      });
+    }
     if (!result.valid || !result.key) unauthorized();
     const user = await db.get<{ id: string; email: string; name: string }>(
       sql`SELECT id, email, name FROM "user" WHERE id = ${result.key.referenceId}`,

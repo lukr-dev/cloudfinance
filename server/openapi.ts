@@ -38,6 +38,18 @@ export function getOpenApi() {
         )[code],
         content: { "application/json": { schema: json(errorSchema) } },
       };
+    if (!("public" in endpoint && endpoint.public)) {
+      responses["429"] = {
+        description: "API key rate limit exceeded (RATE_LIMITED). Retry after the indicated delay.",
+        headers: {
+          "Retry-After": {
+            description: "Seconds to wait before retrying with the same key.",
+            schema: { type: "integer", minimum: 1 },
+          },
+        },
+        content: { "application/json": { schema: json(errorSchema) } },
+      };
+    }
     (paths[endpoint.path] ??= {})[endpoint.method] = {
       operationId: endpoint.operationId,
       security:
