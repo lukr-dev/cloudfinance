@@ -118,25 +118,22 @@ Production is <https://cloudfinance.toastnet.work>, Worker `cloudfinance`, on th
 `toastnet.work` zone. The hostname is a Workers Custom Domain, so Cloudflare manages
 its DNS and TLS. Remove a conflicting CNAME before the first deployment if one exists.
 
-Run the first deployment from **one machine only**, before enabling CI deployment:
+The first deployment runs in GitHub Actions (`void cloudflare login` needs a desktop
+keyring, which headless machines lack). When `void.lock.json` is missing, the deploy
+workflow provisions production, stores the `SETUP_TOKEN` repository secret as a Worker
+secret, and uploads the generated lock as the `void-lock` artifact. Commit that file to
+`dev` and merge it to `main` before the next deployment:
 
 ```sh
-. ~/.config/vite-plus/env
-vp install --frozen-lockfile
-pnpm void prepare
-# Review the checked-in migrations and pass the checks above.
-pnpm void cloudflare login
-pnpm void deploy --platform cloudflare
-pnpm void secret put SETUP_TOKEN  # masked prompt; use a long random token from a password manager
-# Commit void.lock.json with the configuration/workflows through the orchestrator.
+gh run download <run-id> --repo lukr-dev/cloudfinance --name void-lock
 ```
 
 Void provisions D1, applies migrations and creates `BETTER_AUTH_SECRET`. The app rejects
 public signup until `SETUP_TOKEN` is set, including the interval between deployment and
-secret creation. Open production, enter that same token in setup, and create the owner's
-account. Confirm setup status changes to `needsSetup: false` and further signup is closed.
-Keep the token private. An optional secret allows the first deployment to boot safely
-before it has been uploaded; the hook still fails closed for public requests.
+secret creation. Open `https://cloudfinance.toastnet.work/setup?token=<token>`, or enter
+the token in setup, and create the owner's account. Confirm that setup status changes to
+`needsSetup: false` and that further signup is closed. Keep the token private; the
+GitHub secret can be deleted once the account exists.
 
 The version-metadata binding lets Void verify the candidate version through
 `https://cloudfinance.toastnet.work/__void/ready` during staged deployment. Both
@@ -161,7 +158,7 @@ In GitHub **Settings → Secrets and variables → Actions**, add repository sec
 `CLOUDFLARE_API_TOKEN` and repository variable `CLOUDFLARE_ACCOUNT_ID` with value
 `7979b4f7816680c8ba9be80700d1abe4`. Create/configure the `production` environment
 (deployment URL above), allowing deployment from `main`; add approval rules if desired.
-`SETUP_TOKEN` belongs in the Worker secret store, not GitHub's build environment.
+Add repository secret `SETUP_TOKEN` (a long random value) for the first deployment.
 
 Work on `dev`, open a PR to `main`, then merge. Every branch push and every PR runs
 `.github/workflows/ci.yml`; pushes to `main` deploy after the same checks pass.
@@ -171,7 +168,7 @@ are serialized and never cancel an in-progress deploy. Both workflows grant only
 Node from `.node-version`, and pnpm from `devEngines`/`packageManager`. Native build
 permissions for `workerd` and `esbuild` are already enabled in `pnpm-workspace.yaml`.
 
-CI refuses a missing/empty `void.lock.json` before installation. The deploy step uses:
+The deploy step uses:
 
 ```sh
 pnpm void deploy --platform cloudflare </dev/null
@@ -183,7 +180,7 @@ and cause missing credentials/setup to fail instead of prompting. The workflow c
 credentials before invoking Void. Commit updated `void.lock.json` whenever provisioning
 changes; do not commit generated Cloudflare config, `.void`, or local `.env`.
 
-No deployment or Cloudflare authentication has been performed. Hardware-backed passkey
+Hardware-backed passkey
 registration and production Workers CPU usage remain to be checked in their real environments.
 See [the foundation verification report](docs/FOUNDATION.md) for versions, commands, outputs,
 the file tree, and the tailnet preview.
