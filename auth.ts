@@ -25,7 +25,7 @@ export default defineAuth(({ defaults, env, request }) => {
     plugins: [
       ...(defaults.plugins ?? []),
       passkey({ rpID, rpName: "cloudfinance", origin }),
-      apiKey({ defaultPrefix: "cf_", rateLimit: { timeWindow: 60000, maxRequests: 120 } }),
+      apiKey({ defaultPrefix: "cf_", rateLimit: { timeWindow: 60000, maxRequests: 600 } }),
     ],
     databaseHooks: {
       ...defaults.databaseHooks,

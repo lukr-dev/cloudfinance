@@ -1,7 +1,7 @@
 import { backendSmoke } from "./backend-smoke";
 import { afterAll, beforeAll, expect, it } from "vite-plus/test";
 import { startDevServer } from "./dev-server";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -94,7 +94,35 @@ it("serves the SPA and resolves cookie and verified API-key users, closing sign-
 
   const limitedKey = (await (
     await post("/api/auth/api-key/create", { name: "rate-limit" }, cookie)
-  ).json()) as { key: string; id: string };
+  ).json()) as { key: string; id: string; rateLimitMax: number; rateLimitTimeWindow: number };
+  expect(limitedKey.rateLimitMax).toBe(600);
+  expect(limitedKey.rateLimitTimeWindow).toBe(60000);
+  const files = await readdir(server.state, { recursive: true });
+  const databaseFiles = files.filter(
+    (file) =>
+      file.includes("miniflare-D1DatabaseObject/") &&
+      file.endsWith(".sqlite") &&
+      !file.endsWith("/metadata.sqlite"),
+  );
+  expect(databaseFiles).toHaveLength(1);
+  const databasePath = join(server.state, databaseFiles[0]!);
+  const legacyDatabase = new DatabaseSync(databasePath);
+  try {
+    // Simulate an exhausted existing key and apply the same SQL used during deployment.
+    legacyDatabase
+      .prepare(
+        "UPDATE apikey SET rateLimitMax = 120, requestCount = 120, lastRequest = ? WHERE id = ?",
+      )
+      .run(Date.now(), limitedKey.id);
+    legacyDatabase.exec(
+      await readFile(
+        new URL("../db/migrations/20261018100333_increase_api_key_rate_limit.sql", import.meta.url),
+        "utf8",
+      ),
+    );
+  } finally {
+    legacyDatabase.close();
+  }
   const headers = { Authorization: `Bearer ${limitedKey.key}` };
   const rest = () => request("/api/v1/me", { headers });
   const mcp = () =>
@@ -119,7 +147,7 @@ it("serves the SPA and resolves cookie and verified API-key users, closing sign-
         },
       }),
     });
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 600; i++) {
     const response = await (i % 2 === 0 ? rest() : mcp());
     expect(
       response.status,
@@ -129,7 +157,7 @@ it("serves the SPA and resolves cookie and verified API-key users, closing sign-
   }
   for (const call of [rest, mcp]) {
     const response = await call();
-    expect(response.status, "Request after 120 accepted requests").toBe(429);
+    expect(response.status, "Request after 600 accepted requests").toBe(429);
     expect(response.headers.get("Cache-Control")).toContain("no-store");
     expect(response.headers.get("WWW-Authenticate")).toBeNull();
     const retryAfter = Number(response.headers.get("Retry-After"));
@@ -142,15 +170,7 @@ it("serves the SPA and resolves cookie and verified API-key users, closing sign-
     );
   }
   // Age only the disposable key's last accepted request to exercise recovery without sleeping.
-  const files = await readdir(server.state, { recursive: true });
-  const databaseFiles = files.filter(
-    (file) =>
-      file.includes("miniflare-D1DatabaseObject/") &&
-      file.endsWith(".sqlite") &&
-      !file.endsWith("/metadata.sqlite"),
-  );
-  expect(databaseFiles).toHaveLength(1);
-  const database = new DatabaseSync(join(server.state, databaseFiles[0]!));
+  const database = new DatabaseSync(databasePath);
   try {
     database
       .prepare("UPDATE apikey SET lastRequest = ? WHERE id = ?")

@@ -2,6 +2,45 @@ import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vite-plus/test";
 
+it("raises legacy API-key quotas without changing custom policies or key validity", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const directory = new URL("../db/migrations/", import.meta.url);
+    const migration = "20261018100333_increase_api_key_rate_limit.sql";
+    for (const file of readdirSync(directory)
+      .filter((name) => name.endsWith(".sql") && name < migration)
+      .sort())
+      db.exec(readFileSync(new URL(file, directory), "utf8"));
+    const insert = db.prepare(`
+      INSERT INTO apikey (id, configId, referenceId, key, createdAt, updatedAt,
+        enabled, rateLimitEnabled, rateLimitMax, rateLimitTimeWindow,
+        requestCount, lastRequest, expiresAt, remaining, permissions, metadata)
+      VALUES (?, 'default', 'owner', ?, 1, 2, ?, ?, ?, ?, 120, 1000, ?, 42, '{}', '{}')
+    `);
+    insert.run("legacy", "hash-legacy", 1, 1, 120, 60000, null);
+    insert.run("disabled", "hash-disabled", 0, 1, 120, 60000, null);
+    insert.run("expired", "hash-expired", 1, 1, 120, 60000, 1);
+    insert.run("custom-max", "hash-custom-max", 1, 1, 240, 60000, null);
+    insert.run("custom-window", "hash-custom-window", 1, 1, 120, 30000, null);
+    insert.run("unlimited", "hash-unlimited", 1, 0, 120, 60000, null);
+    insert.run("current", "hash-current", 1, 1, 600, 60000, null);
+    const rows = () => db.prepare("SELECT * FROM apikey ORDER BY id").all();
+    const upgraded = new Set(["legacy", "disabled", "expired"]);
+    const expected = rows().map((row) =>
+      upgraded.has(String(row.id))
+        ? { ...row, rateLimitMax: 600, requestCount: 0, lastRequest: null }
+        : row,
+    );
+    const sql = readFileSync(new URL(migration, directory), "utf8");
+    db.exec(sql);
+    expect(rows()).toEqual(expected);
+    db.exec(sql);
+    expect(rows()).toEqual(expected);
+  } finally {
+    db.close();
+  }
+});
+
 it("auth migrations apply to an empty SQLite database and enforce one user atomically", () => {
   const db = new DatabaseSync(":memory:");
   try {

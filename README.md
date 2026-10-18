@@ -64,6 +64,40 @@ API keys stay hashed; the creation response returns the plaintext key once.
 - API errors use `{ error: { code, message } }`; Better Auth's own endpoints retain its
   standard error format. Authenticated responses and setup status use `Cache-Control: no-store`.
 
+### Agent rate limits
+
+The default API-key limit is **600 accepted requests per key**, shared across REST
+(`/api/v1/*`) and MCP (`/mcp`). The installed Better Auth plugin resets the counter
+after more than **60 seconds without an accepted request**. This is an inactivity-based
+quota, not a fixed or rolling requests-per-minute window: continuous traffic can
+eventually exhaust it even at a low request rate. Browser session requests to domain
+APIs do not use this API-key quota; authentication endpoints have their own protections.
+
+Exhausting a valid key's quota now returns **HTTP 429**, rather than 401:
+
+- REST: `{ "error": { "code": "RATE_LIMITED", "message": "..." } }`.
+- MCP: JSON-RPC error with `error.data.code: "RATE_LIMITED"` and HTTP status 429.
+- Both include `Retry-After` in seconds and `Cache-Control: no-store`.
+
+On 429, pause all calls using that key for the indicated delay, then retry with the
+same key. Do not regenerate it. Invalid or revoked keys still return **401**.
+
+This raises the previous 120-request limit fivefold for tool calls and imports, retaining a
+finite burst limit. It does not guarantee 600 requests every minute or increase any
+Cloudflare platform allowance. Browser sessions and authentication-endpoint
+protections are unchanged. Use the transaction batch API (up to 500 transactions per
+call) for imports rather than one request per transaction.
+
+`auth.ts` sets the default for new keys. The `increase_api_key_rate_limit` data
+migration upgrades existing keys with rate limiting enabled and the old
+120-request / 60,000-ms policy to 600, clearing their request counters and last-request
+timestamps so they can immediately use the new quota. Custom limits and disabled
+rate limiting remain unchanged; key values, enabled/disabled state, expiration, and
+revocation are preserved. Void applies the migration during local development and
+deployment; existing production keys receive the change when this revision is deployed.
+Tests cover migration, 600 accepted requests shared across REST/MCP, 429 on the next
+request, recovery after the idle interval, and revoked-key 401s.
+
 Void 1.1.11 has no public getter for its Better Auth instance. The shared helper isolates
 the internal `c.get('__voidAuth')` access; the integration test exercises that seam. Recheck
 it on SDK upgrades. No alternate auth instance or duplicated password configuration exists.
