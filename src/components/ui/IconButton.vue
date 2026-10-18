@@ -22,6 +22,13 @@ withDefaults(defineProps<{ icon: IconName; label: string; size?: number }>(), { 
   color: var(--text-muted);
   cursor: pointer;
 }
+/* Larger touch target; :where keeps parent size overrides (chips, table rows) winning. */
+@media (pointer: coarse) {
+  :where(.icon-button) {
+    width: 40px;
+    height: 40px;
+  }
+}
 .icon-button:hover {
   background: var(--surface-hover);
   color: var(--text);

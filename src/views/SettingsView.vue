@@ -115,7 +115,22 @@ async function signOut() {
             ]"
           />
         </div>
+        <div class="row">
+          <div class="row__label">{{ t("theme.label") }}</div>
+          <SegmentedControl
+            v-model="themeModel"
+            :label="t('theme.label')"
+            :options="[
+              { value: 'light', label: t('theme.light'), icon: 'sun' },
+              { value: 'dark', label: t('theme.dark'), icon: 'moon' },
+              { value: 'system', label: t('theme.system'), icon: 'monitor' },
+            ]"
+          />
+        </div>
+      </section>
 
+      <section class="group">
+        <h2>{{ t("settings.currenciesTitle") }}</h2>
         <div class="row">
           <div class="row__label">
             {{ t("settings.baseCurrency") }}
@@ -135,7 +150,7 @@ async function signOut() {
           </select>
         </div>
 
-        <div class="row">
+        <div class="row row--stack">
           <div class="row__label">
             {{ t("settings.currencies") }}
             <p>{{ t("settings.currenciesHint") }}</p>
@@ -160,22 +175,6 @@ async function signOut() {
               {{ t("settings.addCurrency") }}
             </UiButton>
           </div>
-        </div>
-      </section>
-
-      <section class="group">
-        <h2>{{ t("settings.appearance") }}</h2>
-        <div class="row">
-          <div class="row__label">{{ t("theme.label") }}</div>
-          <SegmentedControl
-            v-model="themeModel"
-            :label="t('theme.label')"
-            :options="[
-              { value: 'light', label: t('theme.light'), icon: 'sun' },
-              { value: 'dark', label: t('theme.dark'), icon: 'moon' },
-              { value: 'system', label: t('theme.system'), icon: 'monitor' },
-            ]"
-          />
         </div>
       </section>
 
@@ -298,14 +297,22 @@ async function signOut() {
   font-size: var(--text-xs);
 }
 @media (max-width: 640px) {
+  .settings {
+    gap: var(--space-8);
+  }
   .row {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .row--top,
+  .row--stack {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
   }
   .currencies,
   .passkeys {
     justify-content: flex-start;
-    justify-items: start;
+    justify-items: stretch;
     min-width: 0;
   }
 }

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
 import { RouterLink, useRouter } from "vue-router";
-import { institutionName } from "../../composables/institutions";
 import { useMoney } from "../../composables/money";
 import { useAccountsStore } from "../../stores/accounts";
 import { useSessionStore } from "../../stores/session";
@@ -47,51 +46,30 @@ async function signOut() {
       </RouterLink>
     </nav>
 
-    <section v-if="accounts.onBudget.length" class="side-section">
+    <section
+      v-for="section in [
+        { key: 'budget', title: t('nav.onBudget'), items: accounts.onBudget, totals: true },
+        { key: 'tracking', title: t('nav.tracking'), items: accounts.tracking, totals: false },
+      ].filter((s) => s.items.length)"
+      :key="section.key"
+      class="side-section"
+    >
       <div class="side-heading">
-        <span>{{ t("nav.onBudget") }}</span>
-        <span class="side-heading__totals">
+        <span>{{ section.title }}</span>
+        <span v-if="section.totals" class="side-heading__totals">
           <span v-for="total in accounts.budgetTotals" :key="total.currency" class="num">
             {{ format(total.amount, total.currency, { code: true }) }}
           </span>
         </span>
       </div>
       <RouterLink
-        v-for="account in accounts.onBudget"
+        v-for="account in section.items"
         :key="account.id"
         :to="{ path: '/transactions', query: { account: account.id } }"
         class="account"
         :class="{ 'is-active': $route.query.account === account.id }"
       >
-        <span class="account__name">
-          {{ account.name }}
-          <span v-if="account.institution" class="account__inst">{{
-            institutionName(account.institution)
-          }}</span>
-        </span>
-        <span class="num account__balance" :class="{ neg: account.balance_minor < 0 }">
-          {{ balance(account.balance_minor, account.currency) }}
-        </span>
-      </RouterLink>
-    </section>
-
-    <section v-if="accounts.tracking.length" class="side-section">
-      <div class="side-heading">
-        <span>{{ t("nav.tracking") }}</span>
-      </div>
-      <RouterLink
-        v-for="account in accounts.tracking"
-        :key="account.id"
-        :to="{ path: '/transactions', query: { account: account.id } }"
-        class="account"
-        :class="{ 'is-active': $route.query.account === account.id }"
-      >
-        <span class="account__name">
-          {{ account.name }}
-          <span v-if="account.institution" class="account__inst">{{
-            institutionName(account.institution)
-          }}</span>
-        </span>
+        <span class="account__name">{{ account.name }}</span>
         <span class="num account__balance" :class="{ neg: account.balance_minor < 0 }">
           {{ balance(account.balance_minor, account.currency) }}
         </span>
@@ -182,18 +160,14 @@ async function signOut() {
   align-items: baseline;
   gap: var(--space-2);
   padding: 0 var(--space-3) var(--space-2);
-  font-size: var(--text-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: var(--text-sm);
   color: var(--text-faint);
-  font-weight: 600;
+  font-weight: 500;
 }
 .side-heading__totals {
   display: grid;
   justify-items: end;
-  letter-spacing: 0;
-  text-transform: none;
-  font-weight: 500;
+  font-size: var(--text-xs);
 }
 .account {
   display: grid;
@@ -216,11 +190,6 @@ async function signOut() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.account__inst {
-  display: block;
-  font-size: var(--text-xs);
-  color: var(--text-faint);
 }
 .account__balance {
   color: var(--text-muted);

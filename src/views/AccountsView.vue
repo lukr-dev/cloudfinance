@@ -46,7 +46,7 @@ function open(account: Account) {
 <template>
   <PageLayout :title="t('accounts.title')">
     <template #actions>
-      <UiButton variant="primary" icon="plus" @click="ui.openAccount()">{{
+      <UiButton variant="primary" icon="plus" compact @click="ui.openAccount()">{{
         t("accounts.add")
       }}</UiButton>
     </template>
@@ -64,7 +64,7 @@ function open(account: Account) {
 
     <section v-for="section in sections" :key="section.key" class="section">
       <div class="section-head">
-        <h2>{{ section.title }}</h2>
+        <h2 class="section-title">{{ section.title }}</h2>
         <span class="totals">
           <span v-for="[currency, amount] in totals(section.items)" :key="currency" class="num">
             {{ format(amount, currency, { code: true }) }}
@@ -121,19 +121,11 @@ function open(account: Account) {
 .section {
   margin-bottom: var(--space-10);
 }
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: var(--space-3);
-}
-.section-head h2 {
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
 .totals {
   display: flex;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0 var(--space-4);
   color: var(--text-muted);
   font-weight: 500;
 }
@@ -170,6 +162,18 @@ function open(account: Account) {
 @media (max-width: 760px) {
   .hide-sm {
     display: none;
+  }
+  .section {
+    margin-bottom: var(--space-8);
+  }
+  .accounts thead {
+    display: none;
+  }
+  .accounts tbody tr:first-child td {
+    border-top: 1px solid var(--border);
+  }
+  .totals {
+    font-size: var(--text-sm);
   }
 }
 </style>

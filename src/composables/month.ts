@@ -38,3 +38,33 @@ export function formatDay(date: string, locale: string): string {
     month: "short",
   }).format(new Date(y!, m! - 1, d));
 }
+
+/** "16 Oct", or "16 Oct 2025" outside the current year. */
+export function formatDate(date: string, locale: string, now = new Date()): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale === "de" ? "de-CH" : "en-GB", {
+    day: "numeric",
+    month: "short",
+    year: y === now.getFullYear() ? undefined : "numeric",
+  }).format(new Date(y!, m! - 1, d));
+}
+
+/** Heading for a day in a list: "Today", "Yesterday", or a full weekday date. */
+export function dayHeading(
+  date: string,
+  locale: string,
+  labels: { today: string; yesterday: string },
+  now = new Date(),
+): string {
+  const today = todayIso(now);
+  const yesterday = todayIso(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  if (date === today) return labels.today;
+  if (date === yesterday) return labels.yesterday;
+  const [y, m, d] = date.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale === "de" ? "de-CH" : "en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: y === now.getFullYear() ? undefined : "numeric",
+  }).format(new Date(y!, m! - 1, d));
+}

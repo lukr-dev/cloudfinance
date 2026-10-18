@@ -6,13 +6,15 @@ import type { Transaction, TransactionList } from "../../shared/schemas";
 import { api } from "../api/http";
 import PageLayout from "../components/layout/PageLayout.vue";
 import CategoryCell from "../components/transactions/CategoryCell.vue";
+import TransactionRows from "../components/transactions/TransactionRows.vue";
 import AppIcon from "../components/ui/AppIcon.vue";
 import EmptyState from "../components/ui/EmptyState.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import { useErrorToast } from "../composables/errors";
 import { institutionName } from "../composables/institutions";
 import { useMoney } from "../composables/money";
-import { formatDay } from "../composables/month";
+import { PHONE, useMediaQuery } from "../composables/media";
+import { formatDate } from "../composables/month";
 import { useAccountsStore } from "../stores/accounts";
 import { useCatalogStore } from "../stores/catalog";
 import { useUiStore } from "../stores/ui";
@@ -26,6 +28,7 @@ const accounts = useAccountsStore();
 const catalog = useCatalogStore();
 const ui = useUiStore();
 const showError = useErrorToast();
+const phone = useMediaQuery(PHONE);
 
 const rows = ref<Transaction[]>([]);
 const cursor = ref<string | null>(null);
@@ -103,12 +106,13 @@ function sourceLabel(source: string) {
 <template>
   <PageLayout :title="account ? account.name : t('transactions.title')" wide>
     <template #actions>
-      <UiButton v-if="account" icon="edit" @click="ui.openAccount(account)">{{
+      <UiButton v-if="account" icon="edit" compact @click="ui.openAccount(account)">{{
         t("common.edit")
       }}</UiButton>
       <UiButton
         variant="primary"
         icon="plus"
+        compact
         @click="ui.openTransaction(null, { account_id: account?.id })"
       >
         {{ t("transactions.add") }}
@@ -116,23 +120,21 @@ function sourceLabel(source: string) {
     </template>
 
     <div v-if="account" class="balances">
-      <div>
-        <span class="eyebrow">{{ t("accounts.balance") }}</span>
+      <div class="balances__main">
+        <span class="label">{{
+          [t("accounts.balance"), institutionName(account.institution)].filter(Boolean).join(" · ")
+        }}</span>
         <strong class="num" :class="{ neg: account.balance_minor < 0 }">{{
           format(account.balance_minor, account.currency, { code: true })
         }}</strong>
       </div>
       <div>
-        <span class="eyebrow">{{ t("accounts.cleared") }}</span>
+        <span class="label">{{ t("accounts.cleared") }}</span>
         <span class="num">{{ format(account.cleared_balance_minor, account.currency) }}</span>
       </div>
       <div>
-        <span class="eyebrow">{{ t("accounts.uncleared") }}</span>
+        <span class="label">{{ t("accounts.uncleared") }}</span>
         <span class="num">{{ format(account.uncleared_balance_minor, account.currency) }}</span>
-      </div>
-      <div v-if="account.institution">
-        <span class="eyebrow">{{ t("accounts.institution") }}</span>
-        <span>{{ institutionName(account.institution) }}</span>
       </div>
     </div>
 
@@ -169,7 +171,7 @@ function sourceLabel(source: string) {
           <option v-for="c in entry.categories" :key="c.id" :value="c.id">{{ c.name }}</option>
         </optgroup>
       </select>
-      <label class="checkbox">
+      <label class="checkbox only-uncategorized">
         <input
           type="checkbox"
           :checked="filters.uncategorized"
@@ -184,7 +186,8 @@ function sourceLabel(source: string) {
       </label>
     </div>
 
-    <table v-if="rows.length" class="data-table tx">
+    <TransactionRows v-if="rows.length && phone" :transactions="rows" :hide-account="!!account" />
+    <table v-else-if="rows.length" class="data-table tx">
       <thead>
         <tr>
           <th class="left col-date">{{ t("transactions.date") }}</th>
@@ -205,9 +208,7 @@ function sourceLabel(source: string) {
           @click="ui.openTransaction(tx)"
           @keydown.enter="ui.openTransaction(tx)"
         >
-          <td class="left muted">
-            {{ formatDay(tx.date, locale) }} <span class="year">{{ tx.date.slice(0, 4) }}</span>
-          </td>
+          <td class="left muted">{{ formatDate(tx.date, locale) }}</td>
           <td v-if="!account" class="left muted hide-md ellipsis">{{ tx.account_name }}</td>
           <td class="left payee ellipsis">
             {{ tx.payee || "—" }}<span v-if="tx.memo" class="memo">{{ tx.memo }}</span>
@@ -272,6 +273,9 @@ function sourceLabel(source: string) {
 .balances > div {
   display: grid;
   gap: 2px;
+}
+.balances .label {
+  font-weight: 400;
 }
 .balances strong {
   font-family: var(--font-display);
@@ -344,10 +348,6 @@ function sourceLabel(source: string) {
 .col-flags {
   width: 64px;
 }
-.year {
-  color: var(--text-faint);
-  font-size: var(--text-xs);
-}
 .ellipsis {
   max-width: 280px;
   overflow: hidden;
@@ -415,6 +415,39 @@ function sourceLabel(source: string) {
 @media (max-width: 1000px) {
   .hide-md {
     display: none;
+  }
+}
+@media (max-width: 760px) {
+  .balances {
+    gap: var(--space-3) var(--space-6);
+    margin-bottom: var(--space-6);
+  }
+  .balances__main {
+    flex: 1 0 100%;
+  }
+  .balances strong {
+    font-size: 1.75rem;
+  }
+  .balances > div:not(:first-child) {
+    padding-bottom: 0;
+    font-size: var(--text-sm);
+  }
+  .filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+  .search {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+  .filters select {
+    min-width: 0;
+    width: 100%;
+  }
+  .only-uncategorized {
+    grid-column: 1 / -1;
+    min-height: 36px;
   }
 }
 </style>

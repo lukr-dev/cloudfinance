@@ -85,4 +85,19 @@ function cancel(event: KeyboardEvent) {
 .assign[aria-invalid="true"] {
   border-color: var(--negative);
 }
+/* Touch: no hover hint, so the field always looks editable. */
+@media (hover: none) {
+  .assign {
+    border-color: var(--border);
+    background: var(--surface-raised);
+  }
+}
+@media (max-width: 760px) {
+  .assign {
+    width: 100%;
+    height: 36px;
+    margin-right: 0;
+    font-size: 1rem;
+  }
+}
 </style>

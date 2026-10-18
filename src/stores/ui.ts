@@ -14,7 +14,6 @@ export const useUiStore = defineStore("ui", () => {
     transaction: Transaction | null;
     defaults: { account_id?: string; category_id?: string };
   }>({ open: false, transaction: null, defaults: {} });
-  const sidebarOpen = ref(false);
   const uncategorizedCount = ref(0);
   /** Bumped after any write so views can refetch. */
   const revision = ref(0);
@@ -43,7 +42,6 @@ export const useUiStore = defineStore("ui", () => {
   return {
     accountDialog,
     transactionDialog,
-    sidebarOpen,
     uncategorizedCount,
     revision,
     openAccount,

@@ -121,50 +121,44 @@ function when(value: string | Date | null) {
 
 <template>
   <PageLayout :title="t('agents.title')">
-    <p class="lede">{{ t("agents.lede") }}</p>
-
-    <div class="endpoints">
-      <section class="card">
-        <header>
-          <span class="card__icon"><AppIcon name="agents" /></span>
-          <h2>{{ t("agents.mcp") }}</h2>
-        </header>
-        <p class="muted">{{ t("agents.mcpLede") }}</p>
+    <section class="connect">
+      <div class="endpoint">
+        <span class="label">{{ t("agents.mcp") }}</span>
         <div class="copy-row">
           <code>{{ mcpUrl }}</code>
-          <UiButton size="sm" icon="copy" @click="copy(mcpUrl)">{{ t("common.copy") }}</UiButton>
+          <UiButton size="sm" icon="copy" compact @click="copy(mcpUrl)">{{
+            t("common.copy")
+          }}</UiButton>
         </div>
-        <p class="eyebrow small-gap">Claude Code</p>
+      </div>
+      <div class="endpoint">
+        <span class="label">Claude Code</span>
         <div class="copy-row copy-row--block">
           <code>{{ claudeCommand }}</code>
-          <UiButton size="sm" icon="copy" @click="copy(claudeCommand)">{{
+          <UiButton size="sm" icon="copy" compact @click="copy(claudeCommand)">{{
             t("common.copy")
           }}</UiButton>
         </div>
-      </section>
-      <section class="card">
-        <header>
-          <span class="card__icon"><AppIcon name="external" /></span>
-          <h2>{{ t("agents.rest") }}</h2>
-        </header>
-        <p class="muted">{{ t("agents.restLede") }}</p>
+      </div>
+      <div class="endpoint">
+        <span class="label">
+          {{ t("agents.rest") }}
+          <a class="link" :href="`${origin}/api/v1/openapi.json`" target="_blank" rel="noopener"
+            >{{ t("agents.openapi") }} ↗</a
+          >
+        </span>
         <div class="copy-row">
           <code>{{ origin }}/api/v1</code>
-          <UiButton size="sm" icon="copy" @click="copy(`${origin}/api/v1`)">{{
+          <UiButton size="sm" icon="copy" compact @click="copy(`${origin}/api/v1`)">{{
             t("common.copy")
           }}</UiButton>
         </div>
-        <a class="link" :href="`${origin}/api/v1/openapi.json`" target="_blank" rel="noopener"
-          >{{ t("agents.openapi") }} ↗</a
-        >
-      </section>
-    </div>
-
-    <hr class="section-rule" />
+      </div>
+    </section>
 
     <div class="section-head">
-      <h2>{{ t("agents.keys") }}</h2>
-      <UiButton variant="primary" icon="key" @click="startCreate">{{
+      <h2 class="section-title">{{ t("agents.keys") }}</h2>
+      <UiButton variant="primary" icon="key" size="sm" @click="startCreate">{{
         t("agents.createKey")
       }}</UiButton>
     </div>
@@ -173,8 +167,8 @@ function when(value: string | Date | null) {
       <thead>
         <tr>
           <th class="left">{{ t("common.name") }}</th>
-          <th class="left">Key</th>
-          <th class="left">{{ t("agents.created") }}</th>
+          <th class="left hide-sm">Key</th>
+          <th class="left hide-sm">{{ t("agents.created") }}</th>
           <th class="left">{{ t("agents.lastUsed") }}</th>
           <th>
             <span class="sr-only">{{ t("common.actions") }}</span>
@@ -184,10 +178,10 @@ function when(value: string | Date | null) {
       <tbody>
         <tr v-for="k in keys" :key="k.id">
           <td class="left strong">{{ k.name || "—" }}</td>
-          <td class="left">
+          <td class="left hide-sm">
             <code class="key-start">{{ k.start ?? "cf_" }}…</code>
           </td>
-          <td class="left muted">
+          <td class="left muted hide-sm">
             {{ formatDateTime(new Date(k.createdAt).toISOString(), locale) }}
           </td>
           <td class="left muted">{{ when(k.lastRequest) }}</td>
@@ -204,13 +198,8 @@ function when(value: string | Date | null) {
       </tbody>
     </table>
 
-    <hr class="section-rule" />
-
-    <div class="section-head">
-      <div>
-        <h2>{{ t("agents.activity") }}</h2>
-        <p class="muted small">{{ t("agents.activityLede") }}</p>
-      </div>
+    <div class="section-head activity-head">
+      <h2 class="section-title">{{ t("agents.activity") }}</h2>
     </div>
     <p v-if="!events.length" class="muted">{{ t("agents.noActivity") }}</p>
     <ol v-else class="timeline">
@@ -249,7 +238,7 @@ function when(value: string | Date | null) {
             t("common.copy")
           }}</UiButton>
         </div>
-        <p class="eyebrow small-gap">Claude Code</p>
+        <span class="label">Claude Code</span>
         <div class="copy-row copy-row--block">
           <code>{{ claudeCommand }}</code>
           <UiButton size="sm" icon="copy" @click="copy(claudeCommand)">{{
@@ -273,46 +262,19 @@ function when(value: string | Date | null) {
 </template>
 
 <style scoped>
-.lede {
-  max-width: 64ch;
-  color: var(--text-muted);
-  margin-bottom: var(--space-6);
-}
-.endpoints {
+.connect {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: var(--space-4);
+  gap: var(--space-5);
+  margin-bottom: var(--space-10);
 }
-.card {
+.endpoint {
   display: grid;
-  gap: var(--space-3);
-  align-content: start;
-  padding: var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-card);
+  gap: var(--space-2);
 }
-.card header {
+.endpoint .label {
   display: flex;
-  align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
-}
-.card h2 {
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
-.card p {
-  font-size: 0.875rem;
-}
-.card__icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md);
-  display: grid;
-  place-items: center;
-  background: var(--accent-soft);
-  color: var(--accent);
 }
 .copy-row {
   display: flex;
@@ -336,21 +298,8 @@ function when(value: string | Date | null) {
   white-space: pre-wrap;
   word-break: break-all;
 }
-.small-gap {
-  margin-top: var(--space-2);
-}
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--space-4);
-}
-.section-head h2 {
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
-.small {
-  font-size: var(--text-sm);
+.activity-head {
+  margin-top: var(--space-10);
 }
 .keys td {
   height: 52px;
@@ -421,8 +370,12 @@ function when(value: string | Date | null) {
   font-weight: 500;
 }
 @media (max-width: 760px) {
+  .hide-sm {
+    display: none;
+  }
   .timeline li {
     grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-1) var(--space-3);
   }
   .what {
     grid-column: 1 / -1;

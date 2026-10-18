@@ -31,7 +31,15 @@ const { toasts, dismiss } = useToasts();
   transform: translateX(-50%);
   display: grid;
   gap: var(--space-2);
+  width: max-content;
+  max-width: calc(100vw - 32px);
   z-index: 100;
+}
+/* Clear the tab bar on phones. */
+@media (max-width: 900px) {
+  .toasts {
+    bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom) + var(--space-3));
+  }
 }
 .toast {
   display: flex;

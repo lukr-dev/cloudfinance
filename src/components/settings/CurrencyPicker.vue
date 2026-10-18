@@ -121,7 +121,7 @@ const indexOf = (code: string) => flat.value.findIndex((r) => r.code === code);
       :aria-label="t('settings.addCurrency')"
     >
       <template v-for="section in sections" :key="section.key">
-        <p v-if="section.title" class="eyebrow section-title">{{ section.title }}</p>
+        <p v-if="section.title" class="label picker-group">{{ section.title }}</p>
         <button
           v-for="row in section.rows"
           :id="`currency-${row.code}`"
@@ -165,7 +165,7 @@ const indexOf = (code: string) => flat.value.findIndex((r) => r.code === code);
   margin: 0 calc(-1 * var(--space-3));
   padding: 0 var(--space-1);
 }
-.section-title {
+.picker-group {
   padding: var(--space-3) var(--space-3) var(--space-1);
 }
 .option {

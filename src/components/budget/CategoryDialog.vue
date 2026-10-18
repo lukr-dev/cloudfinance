@@ -172,11 +172,6 @@ async function remove() {
   display: grid;
   gap: 6px;
 }
-.label {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text-muted);
-}
 .swatches {
   display: flex;
   flex-wrap: wrap;

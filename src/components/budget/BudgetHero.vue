@@ -36,92 +36,72 @@ const spentRatio = computed(() =>
 const pace = computed(() =>
   timing.value.kind === "current" && spentRatio.value > timing.value.ratio + 0.1 ? "ahead" : "ok",
 );
+const barLabel = computed(() =>
+  t("budget.spentOfAssigned", {
+    spent: format(spent.value, props.data.currency),
+    assigned: format(assigned.value, props.data.currency),
+  }),
+);
 </script>
 
 <template>
   <section class="hero" :class="`hero--${tone}`">
-    <p class="eyebrow">{{ t("budget.readyToAssign") }}</p>
-    <p class="hero__lede">
-      {{
-        tone === "done"
-          ? t("budget.rtaDone", { currency: data.currency })
-          : tone === "over"
-            ? t("budget.rtaOver")
-            : t("budget.rtaLede")
-      }}
+    <p class="hero__label">
+      {{ tone === "over" ? t("budget.overAssigned") : t("budget.readyToAssign") }}
+    </p>
+    <p class="hero__amount num">
+      <span class="hero__code">{{ data.currency }}</span
+      >{{ format(rta, data.currency) }}
     </p>
 
-    <div class="hero__figure">
-      <span class="hero__amount num">
-        <span class="hero__code">{{ data.currency }}</span
-        >{{ format(rta, data.currency) }}
-      </span>
-      <span v-if="tone !== 'done'" class="hero__suffix">
-        {{ tone === "over" ? t("budget.overAssigned") : t("budget.toAssign") }}
-      </span>
-    </div>
-
-    <div class="hero__stats">
-      <span
-        ><strong class="num">{{ format(data.income_this_month_minor, data.currency) }}</strong>
-        {{ t("budget.income") }}</span
-      >
-      <span
-        ><strong class="num">{{ format(assigned, data.currency) }}</strong>
-        {{ t("budget.assigned") }}</span
-      >
-      <span
-        ><strong class="num">{{ format(spent, data.currency) }}</strong>
-        {{ t("budget.spent") }}</span
-      >
-      <span v-if="timing.kind === 'current'"
-        ><strong class="num">{{ timing.daysLeft }}</strong> {{ t("budget.daysLeft") }}</span
-      >
-    </div>
+    <dl class="hero__stats">
+      <div>
+        <dt>{{ t("budget.income") }}</dt>
+        <dd class="num">{{ format(data.income_this_month_minor, data.currency) }}</dd>
+      </div>
+      <div>
+        <dt>{{ t("budget.assigned") }}</dt>
+        <dd class="num">{{ format(assigned, data.currency) }}</dd>
+      </div>
+      <div>
+        <dt>{{ t("budget.spent") }}</dt>
+        <dd class="num">{{ format(spent, data.currency) }}</dd>
+      </div>
+      <div v-if="timing.kind === 'current'">
+        <dt>{{ t("budget.daysLeft") }}</dt>
+        <dd class="num">{{ timing.daysLeft }}</dd>
+      </div>
+    </dl>
 
     <div
       class="bar"
       :class="{ 'bar--ahead': pace === 'ahead' }"
       role="img"
-      :aria-label="`${Math.round(spentRatio * 100)}% ${t('budget.spentOfAssigned')}`"
+      :aria-label="barLabel"
+      :title="barLabel"
     >
       <div class="bar__fill" :style="{ width: `${spentRatio * 100}%` }" />
       <div
         v-if="timing.kind === 'current'"
         class="bar__today"
         :style="{ left: `${timing.ratio * 100}%` }"
+        :title="t('common.today')"
       />
-    </div>
-    <div class="bar-legend">
-      <span>{{ t("budget.spentOfAssigned") }}</span>
-      <span
-        v-if="timing.kind === 'current'"
-        class="bar-legend__today"
-        :style="{ left: `${timing.ratio * 100}%` }"
-      >
-        {{ t("common.today") }}
-      </span>
-      <span class="num">{{
-        t("budget.assignedTotal", { amount: format(assigned, data.currency) })
-      }}</span>
     </div>
   </section>
 </template>
 
 <style scoped>
-.hero__lede {
-  margin-top: 2px;
-  color: var(--text-muted);
+.hero__label {
   font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-muted);
 }
-.hero__figure {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin: var(--space-3) 0 var(--space-2);
+.hero--over .hero__label {
+  color: var(--negative);
 }
 .hero__amount {
+  margin: var(--space-1) 0 var(--space-5);
   font-family: var(--font-display);
   font-weight: 300;
   font-size: var(--text-hero);
@@ -129,12 +109,12 @@ const pace = computed(() =>
   line-height: 1;
 }
 .hero__code {
-  font-size: 0.5em;
+  font-size: 0.45em;
   letter-spacing: 0;
   color: var(--text-muted);
-  margin-right: 0.2em;
+  margin-right: 0.25em;
   font-weight: 400;
-  vertical-align: 0.35em;
+  vertical-align: 0.4em;
 }
 .hero--done .hero__amount {
   color: var(--positive);
@@ -142,20 +122,23 @@ const pace = computed(() =>
 .hero--over .hero__amount {
   color: var(--negative);
 }
-.hero__suffix {
-  color: var(--text-muted);
-  font-size: var(--text-lg);
-}
 .hero__stats {
   display: flex;
-  gap: var(--space-2) var(--space-8);
   flex-wrap: wrap;
-  margin-bottom: var(--space-5);
-  color: var(--text-muted);
+  gap: var(--space-3) var(--space-10);
+  margin: 0 0 var(--space-4);
 }
-.hero__stats strong {
+.hero__stats div {
+  display: grid;
+  gap: 2px;
+}
+.hero__stats dt {
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+}
+.hero__stats dd {
+  margin: 0;
   font-weight: 600;
-  color: var(--text);
   font-size: 1.0625rem;
 }
 .bar {
@@ -176,32 +159,31 @@ const pace = computed(() =>
 }
 .bar__today {
   position: absolute;
-  top: -6px;
-  bottom: -6px;
+  top: -5px;
+  bottom: -5px;
   width: 2px;
   margin-left: -1px;
   background: var(--text);
   border-radius: 1px;
 }
-.bar-legend {
-  position: relative;
-  display: flex;
-  justify-content: space-between;
-  margin-top: var(--space-3);
-  height: 20px;
-  font-size: var(--text-sm);
-  color: var(--text-faint);
-}
-.bar-legend__today {
-  position: absolute;
-  transform: translateX(-50%);
-}
+
 @media (max-width: 640px) {
   .hero__amount {
-    font-size: 2.5rem;
+    font-size: 2.75rem;
   }
-  .bar-legend__today {
-    display: none;
+  .hero__amount {
+    margin-bottom: var(--space-4);
+  }
+  .hero__stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+    gap: var(--space-3);
+  }
+  .hero__stats dt {
+    font-size: var(--text-xs);
+  }
+  .hero__stats dd {
+    font-size: 0.9375rem;
   }
 }
 </style>

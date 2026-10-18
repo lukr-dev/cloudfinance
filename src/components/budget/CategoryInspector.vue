@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { BudgetMonth, CategoryMonth } from "../../../shared/schemas";
 import { useMoney } from "../../composables/money";
-import { formatDay, monthLabel, shiftMonth } from "../../composables/month";
+import { formatDay, monthLabel } from "../../composables/month";
 import AvailablePill from "../ui/AvailablePill.vue";
 import CategoryDot from "../ui/CategoryDot.vue";
 import IconButton from "../ui/IconButton.vue";
@@ -72,9 +72,7 @@ const net = computed(
 
       <div v-if="detail" class="inspector__body">
         <div>
-          <p class="eyebrow">
-            {{ t("inspector.availableIn", { month: monthLabel(month.month, locale, "long") }) }}
-          </p>
+          <p class="label">{{ t("inspector.available") }}</p>
           <div
             class="figure num"
             :class="{ neg: detail.available_minor < 0, zero: detail.available_minor === 0 }"
@@ -86,13 +84,7 @@ const net = computed(
 
         <dl class="ledger">
           <div>
-            <dt>
-              {{
-                t("inspector.carriedOver", {
-                  month: monthLabel(shiftMonth(month.month, -1), locale, "long"),
-                })
-              }}
-            </dt>
+            <dt>{{ t("inspector.carriedOver") }}</dt>
             <dd class="num">{{ format(detail.carried_over_minor, cur) }}</dd>
           </div>
           <div>
@@ -103,14 +95,10 @@ const net = computed(
             <dt>{{ t("inspector.activity") }}</dt>
             <dd class="num">{{ format(detail.activity_minor, cur) }}</dd>
           </div>
-          <div class="ledger__total">
-            <dt>{{ t("inspector.available") }}</dt>
-            <dd class="num">{{ format(detail.available_minor, cur) }}</dd>
-          </div>
         </dl>
 
         <section>
-          <p class="eyebrow label">{{ t("inspector.quickAssign") }}</p>
+          <h3 class="label">{{ t("inspector.quickAssign") }}</h3>
           <div class="quick">
             <button
               v-for="option in quick"
@@ -129,7 +117,7 @@ const net = computed(
         </section>
 
         <section>
-          <p class="eyebrow label">{{ t("inspector.note") }}</p>
+          <h3 class="label">{{ t("inspector.note") }}</h3>
           <textarea
             v-model="note"
             class="input note"
@@ -140,11 +128,11 @@ const net = computed(
         </section>
 
         <section>
-          <p class="eyebrow label">{{ t("inspector.thisMonth") }}</p>
+          <h3 class="label">{{ t("inspector.thisMonth") }}</h3>
           <p v-if="!detail.transactions.length" class="faint small">
             {{ t("inspector.noActivity") }}
           </p>
-          <ul class="mini-tx">
+          <ul v-else class="mini-tx">
             <li v-for="tx in detail.transactions" :key="tx.id">
               <span>
                 {{ tx.payee || "—" }}
@@ -194,7 +182,6 @@ const net = computed(
           }}</span>
           <span class="link">{{ t("budget.review") }}</span>
         </button>
-        <p class="faint small">{{ t("inspector.hint") }}</p>
       </div>
     </template>
   </div>
@@ -226,6 +213,12 @@ const net = computed(
 .inspector__head > span {
   display: flex;
   flex: none;
+}
+.inspector__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-sunken);
 }
 .inspector__body {
   padding: var(--space-5);
@@ -269,6 +262,9 @@ const net = computed(
 .ledger dd {
   margin: 0;
 }
+.ledger > div:last-child {
+  border-bottom: 0;
+}
 .ledger .ledger__total {
   border-bottom: 0;
   font-weight: 600;
@@ -282,7 +278,7 @@ const net = computed(
 .ledger dd.neg {
   color: var(--negative);
 }
-.label {
+h3.label {
   margin-bottom: var(--space-2);
 }
 .quick {
@@ -301,6 +297,21 @@ const net = computed(
   cursor: pointer;
   font-size: 0.875rem;
   text-align: left;
+}
+@media (max-width: 900px) {
+  .inspector__head {
+    height: 56px;
+  }
+  /* Two columns of quick actions keep the sheet short. */
+  .quick {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .quick__btn {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-height: 56px;
+  }
 }
 .quick__btn:hover {
   border-color: var(--accent);

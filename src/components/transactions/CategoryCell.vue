@@ -4,7 +4,6 @@ import { useI18n } from "vue-i18n";
 import type { Transaction } from "../../../shared/schemas";
 import { useAccountsStore } from "../../stores/accounts";
 import { useCatalogStore } from "../../stores/catalog";
-import AppIcon from "../ui/AppIcon.vue";
 import CategoryDot from "../ui/CategoryDot.vue";
 
 const props = defineProps<{ transaction: Transaction }>();
@@ -29,9 +28,7 @@ const view = computed(() => {
 
 <template>
   <span v-if="view.kind === 'uncategorized'" class="tag">{{ view.label }}</span>
-  <span v-else-if="view.kind === 'transfer'" class="cell muted">
-    <AppIcon name="transfer" :size="14" />{{ view.label }}
-  </span>
+  <span v-else-if="view.kind === 'transfer'" class="cell muted">{{ view.label }}</span>
   <span v-else-if="view.kind !== 'none'" class="cell">
     <CategoryDot :color="view.kind === 'income' ? 'slate' : transaction.category_color" />{{
       view.label

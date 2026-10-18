@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { useI18n } from "vue-i18n";
-import { useUiStore } from "../../stores/ui";
-import IconButton from "../ui/IconButton.vue";
+import { onBeforeUnmount, onMounted } from "vue";
 
-defineProps<{ title: string; wide?: boolean; inspectorOpen?: boolean }>();
-const { t } = useI18n();
-const ui = useUiStore();
+const props = defineProps<{ title: string; wide?: boolean; inspectorOpen?: boolean }>();
+const emit = defineEmits<{ closeInspector: [] }>();
+
+function onKey(event: KeyboardEvent) {
+  if (event.key === "Escape" && props.inspectorOpen && !document.querySelector("dialog[open]")) {
+    emit("closeInspector");
+  }
+}
+onMounted(() => window.addEventListener("keydown", onKey));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 </script>
 
 <template>
@@ -14,14 +19,9 @@ const ui = useUiStore();
     :class="{ 'page--inspector': $slots.inspector, 'page--inspector-open': inspectorOpen }"
   >
     <div class="page__main">
-      <header class="page__header">
-        <IconButton
-          class="page__menu"
-          icon="budget"
-          :label="t('nav.collapse')"
-          @click="ui.sidebarOpen = true"
-        />
+      <header class="page__header" :class="{ 'page__header--toolbar': $slots.toolbar }">
         <h1 class="page__title">{{ title }}</h1>
+        <div v-if="$slots.toolbar" class="page__toolbar"><slot name="toolbar" /></div>
         <div class="page__actions"><slot name="actions" /></div>
       </header>
       <div class="page__scroll">
@@ -29,7 +29,10 @@ const ui = useUiStore();
       </div>
       <footer v-if="$slots.status" class="page__status"><slot name="status" /></footer>
     </div>
-    <aside v-if="$slots.inspector" class="page__inspector"><slot name="inspector" /></aside>
+    <template v-if="$slots.inspector">
+      <div class="page__scrim" aria-hidden="true" @click="emit('closeInspector')" />
+      <aside class="page__inspector"><slot name="inspector" /></aside>
+    </template>
   </div>
 </template>
 
@@ -49,7 +52,7 @@ const ui = useUiStore();
   overflow: hidden;
 }
 .page__header {
-  height: var(--topbar-height);
+  min-height: var(--topbar-height);
   flex: none;
   display: flex;
   align-items: center;
@@ -57,26 +60,28 @@ const ui = useUiStore();
   padding: 0 var(--space-8);
   border-bottom: 1px solid var(--border);
 }
-.page__menu {
-  display: none;
-  margin-left: calc(-1 * var(--space-2));
-}
 .page__title {
   font-family: var(--font-display);
   font-weight: 400;
   font-size: var(--text-xl);
   letter-spacing: -0.015em;
   margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
+.page__toolbar,
 .page__actions {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  flex: none;
 }
 .page__scroll {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .page__content {
   max-width: var(--content-max);
@@ -98,17 +103,24 @@ const ui = useUiStore();
   font-size: var(--text-xs);
   color: var(--text-faint);
 }
+/* Status content is optional (e.g. no agent activity yet); comments count as empty. */
+.page__status:empty {
+  display: none;
+}
 .page__inspector {
   background: var(--surface-sunken);
   border-left: 1px solid var(--border);
   overflow-y: auto;
 }
+.page__scrim {
+  display: none;
+}
 
+/* Narrow: the inspector slides over the content while something is selected. */
 @media (max-width: 1180px) {
   .page--inspector {
     grid-template-columns: minmax(0, 1fr);
   }
-  /* Narrow screens: the inspector slides over the content while something is selected. */
   .page__inspector {
     position: fixed;
     inset: 0 0 0 auto;
@@ -125,20 +137,59 @@ const ui = useUiStore();
     transform: none;
     visibility: visible;
   }
-}
-@media (max-width: 900px) {
-  .page__menu {
-    display: inline-grid;
+  .page--inspector-open .page__scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 19;
+    background: rgba(14, 16, 15, 0.32);
   }
+}
+
+@media (max-width: 900px) {
   .page__header {
+    min-height: 56px;
     padding: 0 var(--space-4);
     gap: var(--space-2);
   }
+  .page__title {
+    font-size: 1.375rem;
+  }
   .page__content {
-    padding: var(--space-5) var(--space-4);
+    padding: var(--space-5) var(--space-4) var(--space-8);
   }
   .page__status {
-    padding: 0 var(--space-4);
+    display: none;
+  }
+  /* Phones and small tablets: the inspector is a bottom sheet above the tab bar. */
+  .page__inspector {
+    inset: auto 0 0 0;
+    width: 100%;
+    max-height: 85dvh;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 50;
+    transform: translateY(100%);
+  }
+  .page--inspector-open .page__scrim {
+    z-index: 49;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Title and actions on top, the toolbar (month, currency, …) gets its own row. */
+  .page__header--toolbar {
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+    padding-top: var(--space-2);
+    padding-bottom: var(--space-2);
+  }
+  .page__header--toolbar .page__toolbar {
+    order: 3;
+    flex: 1 0 100%;
+    justify-content: space-between;
   }
 }
 </style>
