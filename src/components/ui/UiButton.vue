@@ -10,6 +10,8 @@ withDefaults(
     loading?: boolean;
     disabled?: boolean;
     block?: boolean;
+    /** Icon only on narrow screens; the label stays for screen readers. */
+    compact?: boolean;
   }>(),
   { variant: "secondary", size: "md", type: "button" },
 );
@@ -19,13 +21,17 @@ withDefaults(
   <button
     :type="type"
     class="ui-button"
-    :class="[`ui-button--${variant}`, `ui-button--${size}`, { 'ui-button--block': block }]"
+    :class="[
+      `ui-button--${variant}`,
+      `ui-button--${size}`,
+      { 'ui-button--block': block, 'ui-button--compact': compact && icon },
+    ]"
     :disabled="disabled || loading"
     :aria-busy="loading || undefined"
   >
     <span v-if="loading" class="spinner" aria-hidden="true" />
     <AppIcon v-else-if="icon" :name="icon" :size="size === 'sm' ? 14 : 16" :stroke-width="2" />
-    <slot />
+    <span class="ui-button__label"><slot /></span>
   </button>
 </template>
 
@@ -96,6 +102,28 @@ withDefaults(
   border: 2px solid currentColor;
   border-right-color: transparent;
   animation: spin 700ms linear infinite;
+}
+@media (max-width: 900px) {
+  .ui-button {
+    height: 40px;
+  }
+  .ui-button--sm {
+    height: 34px;
+  }
+}
+@media (max-width: 760px) {
+  .ui-button--compact {
+    width: 40px;
+    padding: 0;
+  }
+  .ui-button--compact .ui-button__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
 }
 @keyframes spin {
   to {

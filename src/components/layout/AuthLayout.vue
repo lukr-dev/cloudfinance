@@ -24,7 +24,6 @@ function switchLocale(next: Locale) {
       <BrandMark />
       <div class="auth__copy">
         <h1>{{ t("auth.headline") }}</h1>
-        <p>{{ t("auth.lede") }}</p>
       </div>
 
       <figure class="ledger-card" aria-hidden="true">
@@ -39,7 +38,6 @@ function switchLocale(next: Locale) {
             ><span class="num">{{ amount }}</span>
           </li>
         </ul>
-        <figcaption>{{ t("brand.tagline") }}</figcaption>
       </figure>
 
       <div class="auth__locale" role="group" :aria-label="t('auth.language')">
@@ -96,13 +94,6 @@ function switchLocale(next: Locale) {
   letter-spacing: -0.025em;
 }
 
-.auth__copy p {
-  margin-top: var(--space-5);
-  max-width: 46ch;
-  font-size: 1.0625rem;
-  color: var(--text-muted);
-}
-
 .ledger-card {
   margin: 0 0 auto;
   width: min(340px, 100%);
@@ -149,15 +140,6 @@ function switchLocale(next: Locale) {
   color: var(--text);
 }
 
-.ledger-card figcaption {
-  margin-top: var(--space-4);
-  font-size: var(--text-xs);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 600;
-}
-
 .auth__locale {
   position: absolute;
   top: var(--space-8);
@@ -193,17 +175,31 @@ function switchLocale(next: Locale) {
   width: min(380px, 100%);
 }
 
+/* Phones and tablets: brand and language on top, the form right below. */
 @media (max-width: 880px) {
   .auth {
     grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
   }
   .auth__story {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4) var(--space-5);
+    padding-top: calc(var(--space-4) + env(safe-area-inset-top));
+    background: none;
     border-right: 0;
-    border-bottom: 1px solid var(--border);
-    gap: var(--space-6);
   }
+  .auth__copy,
   .ledger-card {
     display: none;
+  }
+  .auth__locale {
+    position: static;
+  }
+  .auth__panel {
+    place-items: start center;
+    padding: var(--space-8) var(--space-5) var(--space-10);
   }
 }
 </style>

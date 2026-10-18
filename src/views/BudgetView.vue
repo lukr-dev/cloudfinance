@@ -103,8 +103,12 @@ const groupDialog = ref({ open: false, groupId: null as string | null });
 </script>
 
 <template>
-  <PageLayout :title="t('budget.title')" :inspector-open="!!budget.selectedId">
-    <template #actions>
+  <PageLayout
+    :title="t('budget.title')"
+    :inspector-open="!!budget.selectedId"
+    @close-inspector="budget.select(null)"
+  >
+    <template #toolbar>
       <div class="month-nav">
         <IconButton
           icon="chevron-left"
@@ -139,18 +143,18 @@ const groupDialog = ref({ open: false, groupId: null as string | null });
       >
         <option v-for="c in settings.currencies" :key="c" :value="c">{{ c }}</option>
       </select>
-      <span class="divider" />
-      <UiButton variant="primary" icon="plus" @click="ui.openTransaction()">{{
+    </template>
+    <template #actions>
+      <UiButton variant="primary" icon="plus" compact @click="ui.openTransaction()">{{
         t("transactions.add")
       }}</UiButton>
     </template>
 
     <template v-if="budget.month">
       <BudgetHero :data="budget.month" />
-      <hr class="section-rule" />
 
       <template v-if="hasCategories">
-        <div class="section-head">
+        <div class="section-head categories-head">
           <h2 class="section-title">{{ t("budget.categories") }}</h2>
           <div class="section-links">
             <button type="button" class="link" @click="moveOpen = true">
@@ -183,8 +187,7 @@ const groupDialog = ref({ open: false, groupId: null as string | null });
       </EmptyState>
 
       <template v-if="recent.length">
-        <hr class="section-rule" />
-        <div class="section-head">
+        <div class="section-head recent-head">
           <h2 class="section-title">{{ t("budget.recent") }}</h2>
           <RouterLink to="/transactions" class="link">{{ t("budget.viewAll") }}</RouterLink>
         </div>
@@ -193,15 +196,6 @@ const groupDialog = ref({ open: false, groupId: null as string | null });
     </template>
 
     <template #status>
-      <span v-if="budget.month">
-        {{
-          t(
-            "budget.uncategorized",
-            { n: budget.month.uncategorized_count },
-            budget.month.uncategorized_count,
-          )
-        }}
-      </span>
       <AgentActivity />
     </template>
 
@@ -248,6 +242,7 @@ const groupDialog = ref({ open: false, groupId: null as string | null });
   background: none;
   border-radius: var(--radius-md);
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
 }
 .month-label:hover {
@@ -260,33 +255,31 @@ const groupDialog = ref({ open: false, groupId: null as string | null });
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-.divider {
-  width: 1px;
-  height: 24px;
-  background: var(--border);
+.categories-head {
+  margin-top: var(--space-10);
 }
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: var(--space-3);
-}
-.section-title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  letter-spacing: -0.005em;
+.recent-head {
+  margin-top: var(--space-12);
 }
 .section-links {
   display: flex;
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
-@media (max-width: 760px) {
-  .divider,
+@media (max-width: 900px) {
+  .month-nav {
+    margin-left: calc(-1 * var(--space-2));
+  }
   .month-label {
     min-width: 0;
   }
-  .divider {
-    display: none;
+  .currency-select {
+    height: 36px;
+  }
+  .categories-head {
+    margin-top: var(--space-8);
+  }
+  .recent-head {
+    margin-top: var(--space-10);
   }
 }
 </style>

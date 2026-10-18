@@ -351,6 +351,16 @@ const kindOptions = computed(() => [
 .kind:empty {
   display: none;
 }
+@media (max-width: 760px) {
+  .kind :deep(.segmented) {
+    display: flex;
+  }
+  .kind :deep(.segmented button) {
+    flex: 1;
+    justify-content: center;
+    height: 32px;
+  }
+}
 .confirm {
   padding: var(--space-3);
   border-radius: var(--radius-md);

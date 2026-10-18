@@ -10,7 +10,7 @@
   --font-display: "Outfit", var(--font-sans);
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 
-  --text-xs: 0.75rem; /* 12 — eyebrows, footnotes */
+  --text-xs: 0.75rem; /* 12 — footnotes, badges */
   --text-sm: 0.8125rem; /* 13 — table meta, labels */
   --text-md: 0.9375rem; /* 15 — body, table rows */
   --text-lg: 1.0625rem; /* 17 — section titles */
@@ -41,6 +41,7 @@
   --sidebar-width: 248px;
   --inspector-width: 320px;
   --topbar-height: 64px;
+  --tabbar-height: 56px; /* bottom navigation on phones */
   --row-height: 48px;
   --content-max: 1120px;
 

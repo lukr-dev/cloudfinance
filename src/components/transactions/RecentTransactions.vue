@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
 import type { Transaction } from "../../../shared/schemas";
+import { PHONE, useMediaQuery } from "../../composables/media";
 import { useMoney } from "../../composables/money";
-import { formatDay } from "../../composables/month";
+import { formatDate } from "../../composables/month";
 import { useUiStore } from "../../stores/ui";
 import CategoryCell from "./CategoryCell.vue";
+import TransactionRows from "./TransactionRows.vue";
 
 defineProps<{ transactions: Transaction[] }>();
 const { t, locale } = useI18n();
 const { format } = useMoney();
 const ui = useUiStore();
+const phone = useMediaQuery(PHONE);
 </script>
 
 <template>
-  <table class="data-table recent">
+  <TransactionRows v-if="phone" :transactions="transactions" />
+  <table v-else class="data-table recent">
     <thead>
       <tr>
         <th class="left">{{ t("transactions.date") }}</th>
@@ -25,7 +29,7 @@ const ui = useUiStore();
     </thead>
     <tbody>
       <tr v-for="tx in transactions" :key="tx.id" @click="ui.openTransaction(tx)">
-        <td class="left muted date">{{ formatDay(tx.date, locale) }}</td>
+        <td class="left muted date">{{ formatDate(tx.date, locale) }}</td>
         <td class="left payee">
           {{ tx.payee || "—" }}<span v-if="tx.memo" class="memo">{{ tx.memo }}</span>
         </td>
@@ -51,7 +55,8 @@ const ui = useUiStore();
   background: var(--surface-hover);
 }
 .date {
-  width: 80px;
+  width: 96px;
+  white-space: nowrap;
 }
 .payee {
   font-weight: 500;
