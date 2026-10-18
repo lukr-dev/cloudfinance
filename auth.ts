@@ -2,11 +2,17 @@ import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
 import { APIError } from "better-auth/api";
 import { defineAuth } from "void/auth";
+import { requireSetupToken } from "./server/setup-token.ts";
 
 export default defineAuth(({ defaults, env, request }) => {
   const origin =
-    typeof env.AUTH_ORIGIN === "string" ? env.AUTH_ORIGIN : new URL(request.url).origin;
-  const rpID = typeof env.PASSKEY_RP_ID === "string" ? env.PASSKEY_RP_ID : new URL(origin).hostname;
+    !import.meta.env?.DEV && typeof env.AUTH_ORIGIN === "string"
+      ? env.AUTH_ORIGIN
+      : new URL(request.url).origin;
+  const rpID =
+    !import.meta.env?.DEV && typeof env.PASSKEY_RP_ID === "string"
+      ? env.PASSKEY_RP_ID
+      : new URL(origin).hostname;
 
   return {
     ...defaults,
@@ -34,6 +40,7 @@ export default defineAuth(({ defaults, env, request }) => {
                 message: "Account setup is complete. Sign-up is closed.",
               });
             }
+            requireSetupToken(request, env.SETUP_TOKEN);
             return defaults.databaseHooks?.user?.create?.before?.(user, context);
           },
         },

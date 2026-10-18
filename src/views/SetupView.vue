@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { auth } from "../api/auth";
@@ -19,6 +20,10 @@ const step = ref<"account" | "passkey">("account");
 const name = ref("");
 const email = ref("");
 const password = ref("");
+// The token can also arrive in the link (/setup?token=…) so it never has to be typed.
+const tokenFromLink = useRoute().query.token;
+const setupToken = ref(typeof tokenFromLink === "string" ? tokenFromLink : "");
+const tokenError = ref<string | null>(null);
 const error = ref<string | null>(null);
 const passwordError = ref<string | null>(null);
 const busy = ref(false);
@@ -26,16 +31,31 @@ const busy = ref(false);
 async function createAccount() {
   error.value = null;
   passwordError.value = null;
+  tokenError.value = null;
   if (password.value.length < 12) {
     passwordError.value = t("auth.passwordTooShort");
     return;
   }
   busy.value = true;
   const { data, error: failure } = await auth.signUp
-    .email({ name: name.value, email: email.value, password: password.value })
+    .email({
+      name: name.value,
+      email: email.value,
+      password: password.value,
+      fetchOptions: setupToken.value
+        ? { headers: { "X-Setup-Token": setupToken.value.trim() } }
+        : undefined,
+    })
     .catch(() => ({ data: null, error: { message: t("errors.network") } }));
   busy.value = false;
   if (failure || !data) {
+    const code = (failure as { code?: string } | null)?.code;
+    if (code === "SETUP_TOKEN_INVALID" || code === "SETUP_TOKEN_REQUIRED") {
+      tokenError.value = t(
+        `auth.${code === "SETUP_TOKEN_INVALID" ? "setupTokenInvalid" : "setupTokenRequired"}`,
+      );
+      return;
+    }
     error.value = failure?.message ?? t("auth.setupFailed");
     return;
   }
@@ -64,6 +84,23 @@ async function addPasskey() {
       <h2 class="title">{{ t("auth.setupTitle") }}</h2>
       <p class="lede">{{ t("auth.setupLede") }}</p>
       <form class="form" @submit.prevent="createAccount">
+        <FormField
+          v-if="session.setupTokenRequired"
+          v-slot="{ id }"
+          :label="t('auth.setupToken')"
+          :hint="t('auth.setupTokenHint')"
+          :error="tokenError"
+        >
+          <input
+            :id="id"
+            v-model="setupToken"
+            class="input token"
+            autocomplete="off"
+            spellcheck="false"
+            required
+            :aria-invalid="!!tokenError"
+          />
+        </FormField>
         <FormField v-slot="{ id }" :label="t('common.name')">
           <input :id="id" v-model="name" class="input" autocomplete="name" required />
         </FormField>
@@ -129,5 +166,9 @@ async function addPasskey() {
 .form {
   display: grid;
   gap: var(--space-4);
+}
+.token {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
 }
 </style>

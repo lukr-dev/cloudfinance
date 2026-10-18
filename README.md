@@ -19,6 +19,13 @@ Open the URL Vite prints (normally `http://localhost:5173`). One server handles 
 history fallback, REST, and `/api/auth/*`. `vp install` runs `void prepare` to generate
 gitignored `.void` types; dev also applies local migrations. No Cloudflare login is needed.
 
+For a local reverse proxy, allow its hostname explicitly in the shell (comma-separated,
+without schemes or ports). The default only allows Vite's local hosts:
+
+```sh
+VITE_ALLOWED_HOSTS=hermes.tail880baf.ts.net vp dev
+```
+
 The three views contain plain translated text. Setup/sign-in forms and all styling are
 left to the designer. Auth clients, passkey/API-key client plugins, and navigation guards
 are wired in `src/api/auth.ts` and `src/router/index.ts`.
@@ -42,7 +49,12 @@ and API-key plugins. The user-create hook rejects sign-up after the first user. 
 SQLite expression index also prevents two concurrent initial sign-ups creating two users.
 API keys stay hashed; the creation response returns the plaintext key once.
 
-- Public `GET /api/v1/setup-status` returns `{ "needsSetup": true }` until setup completes.
+- Public `GET /api/v1/setup-status` returns `needsSetup` and `setupTokenRequired` booleans.
+  Initial setup needs the `X-Setup-Token` header whenever `SETUP_TOKEN` is configured or
+  the request URL is not loopback. A missing production secret rejects signup with
+  `SETUP_TOKEN_REQUIRED`; missing/wrong headers return `SETUP_TOKEN_INVALID` (403).
+  Loopback development without a token needs no header. An existing user always gives
+  `SIGN_UP_CLOSED`, regardless of the token.
   This is the requested bootstrap exception to authenticated `/api/v1/*` routes.
 - `GET /api/v1/me` calls `server/auth-context.ts` and returns `{ id, email, name, via }`.
 - Session cookies give `via: "session"`. `Authorization: Bearer <key>` is verified with
@@ -56,21 +68,16 @@ Void 1.1.11 has no public getter for its Better Auth instance. The shared helper
 the internal `c.get('__voidAuth')` access; the integration test exercises that seam. Recheck
 it on SDK upgrades. No alternate auth instance or duplicated password configuration exists.
 
-For passkeys, `rpID` defaults to the current request hostname and the expected origin
-defaults to the request origin. For local development use `http://localhost:5173`, with
-`rpID=localhost`. A remote browser needs HTTPS. To fix a canonical origin, create `.env`:
-
-```ini
-AUTH_ORIGIN=http://localhost:5173
-PASSKEY_RP_ID=localhost
-```
-
-For a tailnet preview use its full HTTPS origin (including its port) and hostname alone
-as the RP ID. For production use the deployed HTTPS origin and production hostname. Set
-production values with `pnpm void secret put AUTH_ORIGIN` and `pnpm void secret put PASSKEY_RP_ID`
-after connecting to the personal Cloudflare account. Changing the RP ID requires registering
-new passkeys. Void manages `BETTER_AUTH_SECRET` on deployment; dev supplies its own default.
-A local production preview needs an explicit `BETTER_AUTH_SECRET`.
+During `vp dev`, passkey RP ID and auth origin always use the current request URL,
+ignoring production vars. Loopback development normally uses `http://localhost:5173`
+and `rpID=localhost`. A remote browser needs HTTPS and a proxy that preserves the
+external request URL. Production `AUTH_ORIGIN` and `PASSKEY_RP_ID` are fixed in
+`void.config.ts` under `cloudflare.vars`. These non-secret keys are deliberately absent
+from `env.ts`: Void 1.1.11 rejects schema-declared server keys in plaintext Worker vars.
+Changing the RP ID requires registering new passkeys. Void manages `BETTER_AUTH_SECRET`
+on deployment; dev supplies its own default. A local production preview needs an explicit
+`BETTER_AUTH_SECRET`. `SETUP_TOKEN` is a server secret declared in `env.ts`; never put it
+in a `VITE_*` value, the repository, or workflow logs.
 
 Void only supports a root `.env`: even `.env.example` is rejected when env.ts is present.
 Examples therefore live here. `.env` is gitignored and never uploaded by Void.
@@ -104,19 +111,77 @@ Money helpers store safe integer minor units and use the CHF/EUR/USD/GBP=2, JPY=
 `parseMoney` accepts an ungrouped decimal in the supplied locale and rejects excess precision
 instead of rounding. `formatMoney` uses Intl parts and integer arithmetic to retain cents.
 
-## Deploy later
+## Deployment
+
+Production is <https://cloudfinance.toastnet.work>, Worker `cloudfinance`, on the
+**Lukas Rauscher** account (`7979b4f7816680c8ba9be80700d1abe4`) and its active
+`toastnet.work` zone. The hostname is a Workers Custom Domain, so Cloudflare manages
+its DNS and TLS. Remove a conflicting CNAME before the first deployment if one exists.
+
+Run the first deployment from **one machine only**, before enabling CI deployment:
 
 ```sh
-pnpm void db generate
-# Review and commit migrations through the normal orchestrator workflow.
+. ~/.config/vite-plus/env
+vp install --frozen-lockfile
+pnpm void prepare
+# Review the checked-in migrations and pass the checks above.
+pnpm void cloudflare login
 pnpm void deploy --platform cloudflare
-# Or: vp run deploy
+pnpm void secret put SETUP_TOKEN  # masked prompt; use a long random token from a password manager
+# Commit void.lock.json with the configuration/workflows through the orchestrator.
 ```
 
-This targets the user's personal Cloudflare account, provisions D1, and applies migrations.
-The first deploy prompts for Cloudflare sign-in/account selection. Deployment setup was
-skipped during init so no account was authenticated. After saving the Cloudflare target,
-plain `pnpm void deploy` is equivalent. Commit `void.lock.json` after the first deployment.
+Void provisions D1, applies migrations and creates `BETTER_AUTH_SECRET`. The app rejects
+public signup until `SETUP_TOKEN` is set, including the interval between deployment and
+secret creation. Open production, enter that same token in setup, and create the owner's
+account. Confirm setup status changes to `needsSetup: false` and further signup is closed.
+Keep the token private. An optional secret allows the first deployment to boot safely
+before it has been uploaded; the hook still fails closed for public requests.
+
+The version-metadata binding lets Void verify the candidate version through
+`https://cloudfinance.toastnet.work/__void/ready` during staged deployment. Both
+`workers_dev` and `preview_urls` are disabled. No Workers subdomain CI variable is
+needed. Initial custom-domain DNS/TLS propagation can delay readiness; check the
+domain and retry from the same checkout if necessary, preserving `.void` recovery state.
+
+Create a Cloudflare API token scoped to this account and the `toastnet.work` zone:
+
+- Account: **Workers Scripts: Edit**, **D1: Edit**, **Account Settings: Read**.
+- Zone (`toastnet.work` only): **Workers Routes: Edit**, **Zone: Read**.
+- DNS: Edit is only needed if you also edit DNS records yourself; this configuration
+  uses the Workers Custom Domain API, which manages its own DNS/TLS. No KV, R2,
+  Hyperdrive, Queues, Containers, or email permissions are needed for this app.
+
+These permissions follow the installed Void [Cloudflare CI guide](node_modules/void/docs/integrations/cloudflare.md#deploying-from-ci),
+Cloudflare's [Worker/route permissions](https://developers.cloudflare.com/workers/authorization/workers/),
+[Custom Domain API](https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/update/),
+and [zone lookup](https://developers.cloudflare.com/api/resources/zones/methods/list/).
+
+In GitHub **Settings → Secrets and variables → Actions**, add repository secret
+`CLOUDFLARE_API_TOKEN` and repository variable `CLOUDFLARE_ACCOUNT_ID` with value
+`7979b4f7816680c8ba9be80700d1abe4`. Create/configure the `production` environment
+(deployment URL above), allowing deployment from `main`; add approval rules if desired.
+`SETUP_TOKEN` belongs in the Worker secret store, not GitHub's build environment.
+
+Work on `dev`, open a PR to `main`, then merge. Every branch push and every PR runs
+`.github/workflows/ci.yml`; pushes to `main` deploy after the same checks pass.
+Manual deployment uses `workflow_dispatch` on `main` only. Production deployments
+are serialized and never cancel an in-progress deploy. Both workflows grant only
+`contents: read`. CI uses the official [Vite+ setup and dependency cache](https://viteplus.dev/guide/ci.md),
+Node from `.node-version`, and pnpm from `devEngines`/`packageManager`. Native build
+permissions for `workerd` and `esbuild` are already enabled in `pnpm-workspace.yaml`.
+
+CI refuses a missing/empty `void.lock.json` before installation. The deploy step uses:
+
+```sh
+pnpm void deploy --platform cloudflare </dev/null
+```
+
+Void 1.1.11 has no `--yes` or `--ci` deploy option. GitHub sets `CI=true`; closed
+stdin, explicit target/account, and the required API token make deployment non-interactive
+and cause missing credentials/setup to fail instead of prompting. The workflow checks
+credentials before invoking Void. Commit updated `void.lock.json` whenever provisioning
+changes; do not commit generated Cloudflare config, `.void`, or local `.env`.
 
 No deployment or Cloudflare authentication has been performed. Hardware-backed passkey
 registration and production Workers CPU usage remain to be checked in their real environments.

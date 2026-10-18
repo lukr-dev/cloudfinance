@@ -12,12 +12,19 @@ export interface SessionUser {
 export const useSessionStore = defineStore("session", () => {
   const user = ref<SessionUser | null>(null);
   const needsSetup = ref<boolean | null>(null);
+  const setupTokenRequired = ref(false);
   let loaded = false;
 
   async function load(force = false) {
     if (loaded && !force) return;
     // Setup can only go from "needed" to "done", so stop asking once it's done.
-    if (needsSetup.value !== false) needsSetup.value = (await getSetupStatus()).needsSetup;
+    if (needsSetup.value !== false) {
+      const status = await getSetupStatus();
+      needsSetup.value = status.needsSetup;
+      setupTokenRequired.value = Boolean(
+        (status as { setupTokenRequired?: boolean }).setupTokenRequired,
+      );
+    }
     if (needsSetup.value) {
       user.value = null;
     } else {
@@ -39,5 +46,5 @@ export const useSessionStore = defineStore("session", () => {
     loaded = true;
   }
 
-  return { user, needsSetup, load, signOut, markSignedIn };
+  return { user, needsSetup, setupTokenRequired, load, signOut, markSignedIn };
 });

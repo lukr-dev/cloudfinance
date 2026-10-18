@@ -24,6 +24,13 @@ Free-tier notes: Workers free plan = ~10 ms CPU per request. Keep request handle
 - Email + password **and** passkeys (Better Auth passkey plugin).
 - **Sign-up is closed once one user exists.** First visit with an empty user table shows a
   one-time "create your account" screen; afterwards sign-up endpoints reject.
+- Initial account creation requires `X-Setup-Token` matching the production `SETUP_TOKEN`
+  secret (constant-time digest comparison). A missing secret fails closed with
+  `SETUP_TOKEN_REQUIRED`; a missing/wrong header returns `SETUP_TOKEN_INVALID` (403).
+  Only loopback request origins (`localhost`, `127.0.0.1`, `[::1]`) without a configured
+  token may create the initial account without a header. Once a user exists,
+  `SIGN_UP_CLOSED` takes precedence. Public setup status returns `needsSetup` and
+  `setupTokenRequired`; it never reveals the token.
 - **API keys** (Better Auth API-key plugin) for agents. Created/revoked in Settings; the
   plaintext key is shown once. Sent as `Authorization: Bearer <key>`.
 - Every `/api/v1/*` and `/mcp` request must resolve to the user, either from the session cookie

@@ -4,6 +4,19 @@ import { defineConfig } from "void/config";
 export default defineConfig({
   worker: { compatibility_date: "2026-10-17" },
   inference: { appType: "void" },
+  cloudflare: {
+    name: "cloudfinance",
+    account_id: "7979b4f7816680c8ba9be80700d1abe4",
+    routes: [{ pattern: "cloudfinance.toastnet.work", custom_domain: true }],
+    vars: {
+      AUTH_ORIGIN: "https://cloudfinance.toastnet.work",
+      PASSKEY_RP_ID: "cloudfinance.toastnet.work",
+    },
+    workers_dev: false,
+    preview_urls: false,
+    // Let staged readiness checks identify the candidate through the custom domain.
+    version_metadata: { binding: "CLOUDFLARE_VERSION_METADATA" },
+  },
   // Client-side routes fall back to the SPA shell. "none" keeps intentional API 404s intact
   // (SPA mode would turn them into index.html), and the target is "/" rather than
   // "/index.html" because the asset layer answers "/index.html" with a 307 to "/".

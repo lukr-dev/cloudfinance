@@ -57,6 +57,12 @@ const de: typeof en = {
     passwordHint: "Mindestens 12 Zeichen.",
     passwordTooShort: "Bitte mindestens 12 Zeichen verwenden.",
     setupFailed: "Das Konto konnte nicht erstellt werden.",
+    setupToken: "Einrichtungs-Token",
+    setupTokenHint:
+      "Belegt, dass dir diese Installation gehört. Du hast ihn beim Deployment erhalten.",
+    setupTokenInvalid: "Dieser Einrichtungs-Token ist ungültig.",
+    setupTokenRequired:
+      "Für dieses Deployment ist ein Einrichtungs-Token nötig, bevor das erste Konto erstellt werden kann.",
     passkeyTitle: "Passkey hinzufügen?",
     passkeyLede:
       "Melde dich mit Touch ID, Face ID, Windows Hello oder einem Sicherheitsschlüssel an. Dein Passwort funktioniert weiterhin.",

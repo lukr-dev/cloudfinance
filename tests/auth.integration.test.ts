@@ -1,76 +1,17 @@
 import { backendSmoke } from "./backend-smoke";
-import { spawn, type ChildProcess } from "node:child_process";
-import { once } from "node:events";
-import { mkdtemp, rm, cp, symlink } from "node:fs/promises";
-import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { setTimeout } from "node:timers/promises";
 import { afterAll, beforeAll, expect, it } from "vite-plus/test";
+import { startDevServer } from "./dev-server";
 
-let child: ChildProcess;
-let state: string;
+let server: Awaited<ReturnType<typeof startDevServer>>;
 let base: string;
-let logs = "";
 
 beforeAll(async () => {
-  state = await mkdtemp(join(tmpdir(), "cloudfinance-test-"));
-  const project = join(state, "project");
-  // Separate generated Void metadata and file watching from other dev servers/design edits.
-  await cp(process.cwd(), project, {
-    recursive: true,
-    filter: (path) =>
-      !["node_modules", ".git", ".void", "dist"].some(
-        (name) => path === resolve(name) || path.startsWith(resolve(name) + "/"),
-      ),
-  });
-  await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
-  const listener = createServer();
-  listener.listen(0, "127.0.0.1");
-  await once(listener, "listening");
-  const address = listener.address();
-  if (!address || typeof address === "string") throw new Error("No test port.");
-  const port = address.port;
-  await new Promise<void>((resolve) => listener.close(() => resolve()));
-  base = `http://127.0.0.1:${port}`;
-  child = spawn("vp", ["dev", "--port", String(port), "--strictPort"], {
-    cwd: project,
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      NODE_ENV: "development",
-      CLOUDFINANCE_TEST_STATE: join(state, "d1"),
-      AUTH_ORIGIN: base,
-      PASSKEY_RP_ID: "127.0.0.1",
-    },
-  });
-  child.stdout?.on("data", (chunk: Buffer) => {
-    logs += chunk.toString();
-  });
-  child.stderr?.on("data", (chunk: Buffer) => {
-    logs += chunk.toString();
-  });
-  for (let attempt = 0; attempt < 200; attempt++) {
-    if (child.exitCode !== null) throw new Error(logs);
-    try {
-      const response = await fetch(`${base}/api/v1/setup-status`);
-      if (response.ok) return;
-    } catch {
-      /* Wait for Vite and local D1 to start. */
-    }
-    await setTimeout(200);
-  }
-  throw new Error(`Dev server did not start: ${logs}`);
+  server = await startDevServer();
+  base = server.base;
 });
 
 afterAll(async () => {
-  if (child?.pid && child.exitCode === null) {
-    const closed = once(child, "close");
-    process.kill(-child.pid, "SIGTERM");
-    await closed;
-  }
-  if (state) await rm(state, { recursive: true, force: true });
+  await server?.stop();
 });
 
 it("serves the SPA and resolves cookie and verified API-key users, closing sign-up", async () => {
@@ -83,7 +24,7 @@ it("serves the SPA and resolves cookie and verified API-key users, closing sign-
     });
   const setup = await request("/api/v1/setup-status");
   expect(setup.headers.get("Cache-Control")).toContain("no-store");
-  expect(await setup.json()).toEqual({ needsSetup: true });
+  expect(await setup.json()).toEqual({ needsSetup: true, setupTokenRequired: false });
   expect((await request("/api/v1/me")).status).toBe(401);
   expect(await (await request("/")).text()).toContain("/src/main.ts");
   expect((await request("/setup", { headers: { Accept: "text/html" } })).status).toBe(200);
@@ -101,7 +42,10 @@ it("serves the SPA and resolves cookie and verified API-key users, closing sign-
   };
   const signup = await post("/api/auth/sign-up/email", credentials);
   expect(signup.status, await signup.clone().text()).toBe(200);
-  expect(await (await request("/api/v1/setup-status")).json()).toEqual({ needsSetup: false });
+  expect(await (await request("/api/v1/setup-status")).json()).toEqual({
+    needsSetup: false,
+    setupTokenRequired: false,
+  });
   const rejected = await post("/api/auth/sign-up/email", {
     ...credentials,
     email: "second@example.com",

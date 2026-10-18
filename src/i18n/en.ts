@@ -53,6 +53,11 @@ export default {
     passwordHint: "At least 12 characters.",
     passwordTooShort: "Use at least 12 characters.",
     setupFailed: "The account could not be created.",
+    setupToken: "Setup token",
+    setupTokenHint: "Proves you own this deployment. You got it when the app was deployed.",
+    setupTokenInvalid: "This setup token is not valid.",
+    setupTokenRequired:
+      "This deployment needs a setup token before the first account can be created.",
     passkeyTitle: "Add a passkey?",
     passkeyLede:
       "Sign in with Touch ID, Face ID, Windows Hello or a security key. Your password keeps working.",

@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-export const setupStatusSchema = z.object({ needsSetup: z.boolean() });
+export const setupStatusSchema = z.object({
+  needsSetup: z.boolean(),
+  setupTokenRequired: z.boolean(),
+});
 export const authContextSchema = z.object({
   id: z.string(),
   email: z.email(),

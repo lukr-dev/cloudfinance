@@ -11,7 +11,12 @@ export default defineConfig(({ mode }) => ({
   environments: {
     void_worker: { optimizeDeps: { include: ["@modelcontextprotocol/server", "zod"] } },
   },
-  server: { host: "127.0.0.1", allowedHosts: ["hermes.tail880baf.ts.net"] },
+  server: {
+    host: "127.0.0.1",
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS?.split(",")
+      .map((host) => host.trim())
+      .filter(Boolean),
+  },
   lint: { options: { typeAware: true, typeCheck: true } },
   fmt: {
     ignorePatterns: [
