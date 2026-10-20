@@ -7,10 +7,13 @@ import * as accounts from "./accounts";
 import * as categories from "./categories";
 import * as budget from "./budget";
 import * as transactions from "./transactions";
+import * as shares from "./shares";
+import * as invitations from "./invitations";
+import { listMembers } from "./members";
 import { listPayees } from "./payees";
 import { listAuditEvents } from "./audit";
 import { DomainError } from "./errors";
-export function mcpHandler(auth: AuthContext) {
+export function mcpHandler(auth: AuthContext, origin = "") {
   return createMcpHandler(
     () => {
       const server = new McpServer({ name: "cloudfinance", version: "1.0.0" });
@@ -59,7 +62,7 @@ export function mcpHandler(auth: AuthContext) {
         );
       }
       const units =
-        "All money is signed integer minor units (CHF 100 = CHF 1.00): negative outflow, positive inflow. Budgets are independent per currency; no FX conversion. ";
+        "All money is signed integer minor units (100 minor units = CHF 1.00): negative outflow, positive inflow. Budgets are independent per currency; no FX conversion. ";
       const month = s.monthParamsSchema.extend({ currency: s.currencySchema.optional() });
       tool(
         "get_settings",
@@ -99,7 +102,7 @@ export function mcpHandler(auth: AuthContext) {
       );
       tool(
         "list_categories",
-        "List shared categories including the immutable income system category (Ready to Assign).",
+        "List your categories including immutable Ready to Assign and Shared repayment (excluded from all budget figures).",
         s.emptySchema,
         () => categories.listCategories(auth),
         true,
@@ -115,7 +118,7 @@ export function mcpHandler(auth: AuthContext) {
       );
       tool(
         "update_category",
-        "Update an expense category. System income category is immutable.",
+        "Update an expense category. System categories are immutable.",
         s.categoryUpdateSchema.extend({ id: s.idSchema }),
         ({ id, ...x }) => categories.updateCategory(auth, id, x),
         false,
@@ -176,7 +179,7 @@ export function mcpHandler(auth: AuthContext) {
       tool(
         "update_transaction",
         units +
-          "Update a transaction and its linked transfer. Cross-currency amount edits require both amounts.",
+          "Update a transaction and its linked transfer. Cross-currency amount edits require both amounts. share replaces participants and reactivates them; share:null removes sharing. Equal/percent shares recompute on amount edits, with truncation toward zero and remainders kept by owner.",
         s.transactionUpdateSchema.extend({ id: s.idSchema }),
         ({ id, ...x }) => transactions.updateTransaction(auth, id, x),
         false,
@@ -203,6 +206,68 @@ export function mcpHandler(auth: AuthContext) {
         "List newest audit events including user or API-key actor IDs.",
         s.pageQuerySchema,
         (x) => listAuditEvents(auth, x),
+        true,
+      );
+      tool(
+        "create_transaction",
+        units +
+          "Create one transaction, optionally shared by member email. Equal splits include the owner; percent uses basis points up to 10000 total; amount uses signed minor units. Remainders stay with the owner. Transfers and Shared repayment cannot be shared.",
+        s.transactionCreateSchema,
+        (x) => transactions.createTransactions(auth, x, "mcp"),
+      );
+      tool(
+        "list_incoming_shares",
+        units +
+          "List incoming shares newest first. Active shares count in your budget but never account balances.",
+        s.incomingShareQuerySchema
+          .omit({ uncategorized: true })
+          .extend({ uncategorized: z.boolean().optional() }),
+        (x) => shares.listIncomingShares(auth, x),
+        true,
+      );
+      tool(
+        "update_incoming_share",
+        units +
+          "Choose your own expense/income category, or decline/re-accept an incoming share. Declining returns that part to the owner's budget.",
+        s.incomingShareUpdateSchema.extend({ id: s.idSchema }),
+        ({ id, ...x }) => shares.updateIncomingShare(auth, id, x),
+        false,
+        true,
+      );
+      tool(
+        "list_share_contacts",
+        "List only members you share entries with, for email autocomplete.",
+        s.emptySchema,
+        () => shares.listShareContacts(auth),
+        true,
+      );
+      tool(
+        "list_members",
+        "Admin only: list instance members.",
+        s.emptySchema,
+        () => listMembers(auth),
+        true,
+      );
+      tool(
+        "list_invitations",
+        "Admin only: list invitation metadata; never returns tokens.",
+        s.emptySchema,
+        () => invitations.listInvitations(auth),
+        true,
+      );
+      tool(
+        "create_invitation",
+        "Admin only: create a one-time invitation expiring in 7 days, optionally bound to an email. Copy the returned token/join URL; no email is sent.",
+        s.invitationCreateSchema,
+        (x) => invitations.createInvitation(auth, x, origin),
+      );
+      tool(
+        "revoke_invitation",
+        "Admin only: revoke an invitation.",
+        s.idParamsSchema,
+        (x) => invitations.revokeInvitation(auth, x.id),
+        false,
+        true,
         true,
       );
       return server;

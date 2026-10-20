@@ -41,7 +41,7 @@ it("raises legacy API-key quotas without changing custom policies or key validit
   }
 });
 
-it("auth migrations apply to an empty SQLite database and enforce one user atomically", () => {
+it("auth migrations apply to an empty SQLite database and require invitations after the first user atomically", () => {
   const db = new DatabaseSync(":memory:");
   try {
     const directory = new URL("../db/migrations/", import.meta.url);
@@ -54,7 +54,8 @@ it("auth migrations apply to an empty SQLite database and enforce one user atomi
       "INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt) VALUES (?, ?, ?, 0, 0, 0)",
     );
     insert.run("first", "First", "first@example.com");
-    expect(() => insert.run("second", "Second", "second@example.com")).toThrow(/UNIQUE constraint/);
+    expect(() => insert.run("second", "Second", "second@example.com")).toThrow(/INVITE_INVALID/);
+    expect(db.prepare("SELECT role FROM members WHERE user_id='first'").get()?.role).toBe("admin");
     expect(db.prepare("SELECT count(*) AS total FROM user").get()?.total).toBe(1);
   } finally {
     db.close();
@@ -124,6 +125,54 @@ it("rebuilds currency tables with existing transactions and foreign keys enabled
         "INSERT INTO transactions SELECT 'duplicate',user_id,created_at,updated_at,account_id,date,amount_minor,currency,payee,memo,category_id,cleared,transfer_account_id,transfer_transaction_id,source,external_id FROM transactions WHERE id='t'",
       ),
     ).toThrow(/UNIQUE constraint/);
+  } finally {
+    db.close();
+  }
+});
+
+it("upgrades populated ledgers with D1 foreign keys enabled and backfills the admin", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec("PRAGMA foreign_keys=ON");
+    const directory = new URL("../db/migrations/", import.meta.url);
+    const files = readdirSync(directory)
+      .filter((n) => n.endsWith(".sql"))
+      .sort();
+    for (const file of files.filter((n) => n < "20261020"))
+      db.exec(readFileSync(new URL(file, directory), "utf8"));
+    db.exec(`
+      INSERT INTO user(id,name,email,emailVerified,createdAt,updatedAt) VALUES ('u','Owner','owner@example.com',0,0,0);
+      INSERT INTO settings(id,user_id,created_at,updated_at,enabled_currencies) VALUES ('s','u','now','now','["CHF"]');
+      INSERT INTO accounts(id,user_id,created_at,updated_at,name,type,currency) VALUES ('a','u','now','now','Bank','checking','CHF'),('b','u','now','now','Cash','cash','CHF');
+      INSERT INTO category_groups(id,user_id,created_at,updated_at,name) VALUES ('g','u','now','now','Everyday');
+      INSERT INTO categories(id,user_id,created_at,updated_at,group_id,name,color) VALUES ('c','u','now','now','g','Food','teal');
+      INSERT INTO budget_assignments(id,user_id,created_at,updated_at,month,category_id,currency,amount_minor) VALUES ('b','u','now','now','2026-10','c','CHF',500);
+      INSERT INTO transactions(id,user_id,created_at,updated_at,account_id,date,amount_minor,currency,category_id,source) VALUES ('t','u','now','now','a','2026-10-01',-101,'CHF','c','manual');
+      INSERT INTO transactions(id,user_id,created_at,updated_at,account_id,date,amount_minor,currency,source,transfer_account_id,transfer_transaction_id) VALUES ('t1','u','now','now','a','2026-10-01',-50,'CHF','manual','b','t2'),('t2','u','now','now','b','2026-10-01',50,'CHF','manual','a','t1');
+    `);
+    const tables = ["settings", "accounts", "categories", "budget_assignments", "transactions"];
+    const before = tables.map((t) => db.prepare(`SELECT * FROM ${t} ORDER BY id`).all());
+    for (const file of files.filter((n) => n >= "20261020")) {
+      db.exec("BEGIN");
+      for (const statement of readFileSync(new URL(file, directory), "utf8").split(
+        "--> statement-breakpoint",
+      ))
+        if (statement.trim()) db.exec(statement);
+      expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+      db.exec("COMMIT");
+    }
+    expect(db.prepare("PRAGMA foreign_keys").get()?.foreign_keys).toBe(1);
+    for (let i = 0; i < tables.length; i++)
+      expect(db.prepare(`SELECT * FROM ${tables[i]} ORDER BY id`).all()).toMatchObject(before[i]!);
+    expect(db.prepare("SELECT user_id,role,invited_by FROM members").all()).toEqual([
+      { user_id: "u", role: "admin", invited_by: null },
+    ]);
+    expect(
+      db.prepare("SELECT split_method,shared_out_minor FROM transactions WHERE id='t'").get(),
+    ).toEqual({ split_method: null, shared_out_minor: 0 });
+    db.exec(
+      "INSERT INTO categories(id,user_id,created_at,updated_at,name,kind,color) VALUES ('repay','u','now','now','Shared repayment','repayment','slate')",
+    );
   } finally {
     db.close();
   }

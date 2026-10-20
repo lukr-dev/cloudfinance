@@ -7,7 +7,8 @@ export default defineMiddleware(async (c, next) => {
   if (!c.req.path.startsWith("/api/v1/")) return next();
   c.header("Cache-Control", "no-store");
   try {
-    if (c.req.path !== "/api/v1/setup-status") await getSettings(await requireAuthContext(c));
+    if (!["/api/v1/setup-status", "/api/v1/invite-status"].includes(c.req.path))
+      await getSettings(await requireAuthContext(c));
     await next();
     if (c.error) throw c.error;
     if (c.res.status === 400) {

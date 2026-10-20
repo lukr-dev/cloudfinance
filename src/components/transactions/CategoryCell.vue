@@ -19,6 +19,8 @@ const view = computed(() => {
     return { kind: "transfer" as const, label: `${tx.amount_minor < 0 ? "→" : "←"} ${other}` };
   }
   if (isIncome) return { kind: "income" as const, label: t("transactions.readyToAssign") };
+  if (tx.category_id && tx.category_id === catalog.repayment?.id)
+    return { kind: "repayment" as const, label: t("transactions.sharedRepayment") };
   if (tx.category_id) return { kind: "category" as const, label: tx.category_name ?? "" };
   const account = accounts.byId.get(tx.account_id);
   if (account && !account.on_budget) return { kind: "none" as const, label: "" };
@@ -30,9 +32,11 @@ const view = computed(() => {
   <span v-if="view.kind === 'uncategorized'" class="tag">{{ view.label }}</span>
   <span v-else-if="view.kind === 'transfer'" class="cell muted">{{ view.label }}</span>
   <span v-else-if="view.kind !== 'none'" class="cell">
-    <CategoryDot :color="view.kind === 'income' ? 'slate' : transaction.category_color" />{{
-      view.label
-    }}
+    <CategoryDot
+      :color="
+        view.kind === 'income' || view.kind === 'repayment' ? 'slate' : transaction.category_color
+      "
+    />{{ view.label }}
   </span>
 </template>
 

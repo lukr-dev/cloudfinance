@@ -13,11 +13,25 @@ export async function write(
   entity: string,
   entity_id: string,
   payload: Record<string, unknown>,
-  statements: Parameters<typeof db.batch>[0],
+  statements: ReadonlyArray<Parameters<typeof db.batch>[0][number]>,
   eventId?: string,
 ) {
-  const base = rowBase(ctx.id, eventId);
-  const event = db
+  await db.batch([
+    auditEvent(ctx, ctx.id, action, entity, entity_id, payload, eventId),
+    ...statements,
+  ]);
+}
+export function auditEvent(
+  ctx: AuthContext,
+  user_id: string,
+  action: string,
+  entity: string,
+  entity_id: string,
+  payload: Record<string, unknown>,
+  eventId?: string,
+) {
+  const base = rowBase(user_id, eventId);
+  return db
     .insert(auditEvents)
     .values({
       ...base,
@@ -30,9 +44,8 @@ export async function write(
       payload,
     })
     .onConflictDoNothing();
-  // D1 batches commit the domain mutation and its audit event together or roll both back.
-  await db.batch([...statements, event]);
 }
+
 export async function listAuditEvents(ctx: AuthContext, query: PageQuery): Promise<AuditList> {
   const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
   const limit = query.limit ?? 50;

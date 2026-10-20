@@ -5,6 +5,7 @@ import type { Transaction } from "../../../shared/schemas";
 import { useMoney } from "../../composables/money";
 import { dayHeading } from "../../composables/month";
 import { useUiStore } from "../../stores/ui";
+import AppIcon from "../ui/AppIcon.vue";
 import CategoryCell from "./CategoryCell.vue";
 
 /** Phone layout for transactions: grouped by day, two lines per row. */
@@ -51,7 +52,12 @@ const days = computed(() => {
             {{ format(tx.amount_minor, tx.currency, { signed: true }) }}
           </span>
           <span class="row__account">
-            <span v-if="!hideAccount">{{ tx.account_name }}</span>
+            <span v-if="tx.share" class="row__own">
+              <AppIcon name="users" :size="11" :stroke-width="2" />{{
+                format(tx.own_amount_minor, tx.currency, { signed: true })
+              }}
+            </span>
+            <span v-else-if="!hideAccount">{{ tx.account_name }}</span>
             <span
               class="row__cleared"
               :class="`row__cleared--${tx.cleared}`"
@@ -138,6 +144,12 @@ const days = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.row__own {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-muted);
 }
 .row__cleared {
   flex: none;

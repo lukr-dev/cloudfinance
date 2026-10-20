@@ -39,7 +39,7 @@ async function signOut() {
       </RouterLink>
       <RouterLink to="/transactions" class="nav-item" active-class="is-active">
         <AppIcon name="transactions" />{{ t("nav.transactions") }}
-        <span v-if="ui.uncategorizedCount" class="badge num">{{ ui.uncategorizedCount }}</span>
+        <span v-if="ui.reviewCount" class="badge num">{{ ui.reviewCount }}</span>
       </RouterLink>
       <RouterLink to="/accounts" class="nav-item" active-class="is-active">
         <AppIcon name="accounts" />{{ t("nav.accounts") }}

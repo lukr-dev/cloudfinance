@@ -2,6 +2,61 @@ import { z } from "zod";
 import * as s from "./schemas";
 import { authContextSchema, setupStatusSchema } from "./auth";
 export const endpoints = [
+  {
+    method: "get",
+    path: "/api/v1/members",
+    operationId: "listMembers",
+    response: z.array(s.memberSchema),
+  },
+  {
+    method: "get",
+    path: "/api/v1/invitations",
+    operationId: "listInvitations",
+    response: z.array(s.invitationSchema),
+  },
+  {
+    method: "post",
+    path: "/api/v1/invitations",
+    operationId: "createInvitation",
+    body: s.invitationCreateSchema,
+    response: s.invitationCreatedSchema,
+  },
+  {
+    method: "delete",
+    path: "/api/v1/invitations/{id}",
+    operationId: "revokeInvitation",
+    params: s.idParamsSchema,
+    response: s.successSchema,
+  },
+  {
+    method: "get",
+    path: "/api/v1/invite-status",
+    operationId: "getInviteStatus",
+    query: s.inviteStatusQuerySchema,
+    response: s.inviteStatusSchema,
+    public: true,
+  },
+  {
+    method: "get",
+    path: "/api/v1/shares",
+    operationId: "listIncomingShares",
+    query: s.incomingShareQuerySchema,
+    response: s.incomingShareListSchema,
+  },
+  {
+    method: "patch",
+    path: "/api/v1/shares/{id}",
+    operationId: "updateIncomingShare",
+    params: s.idParamsSchema,
+    body: s.incomingShareUpdateSchema,
+    response: s.incomingShareSchema,
+  },
+  {
+    method: "get",
+    path: "/api/v1/share-contacts",
+    operationId: "listShareContacts",
+    response: z.array(s.shareContactSchema),
+  },
   { method: "get", path: "/api/v1/me", operationId: "getMe", response: authContextSchema },
   {
     method: "get",

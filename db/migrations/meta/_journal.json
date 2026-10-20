@@ -36,6 +36,27 @@
       "when": 1792317813720,
       "tag": "20261018100333_increase_api_key_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792513589875,
+      "tag": "20261020162629_late_maestro",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792513594905,
+      "tag": "20261020162634_productive_morgan_stark",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792513595853,
+      "tag": "20261020162635_member_signup",
+      "breakpoints": true
     }
   ]
 }

@@ -27,6 +27,7 @@ const ctx: AuthContext = {
   email: "unit@example.com",
   name: "Unit",
   via: "api_key",
+  role: "admin",
   api_key_id: "key-1",
 };
 let fixture: ReturnType<typeof testDatabase>;

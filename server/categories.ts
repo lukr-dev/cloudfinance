@@ -1,6 +1,12 @@
 import { setupId } from "./ids";
 import { db, eq, and, asc, sql } from "void/db";
-import { categories, categoryGroups, transactions, budgetAssignments } from "../db/schema";
+import {
+  categories,
+  categoryGroups,
+  transactions,
+  budgetAssignments,
+  transactionShares,
+} from "../db/schema";
 import type { AuthContext } from "../shared/auth";
 import {
   colors,
@@ -84,7 +90,7 @@ export async function getCategory(ctx: AuthContext, id: string): Promise<Categor
 export async function expenseCategory(ctx: AuthContext, id: string) {
   const cat = await getCategory(ctx, id);
   if (cat.kind !== "expense")
-    fail("CONFLICT", "The income system category cannot be modified or assigned money.", 409);
+    fail("CONFLICT", "System categories cannot be modified or assigned money.", 409);
   return cat;
 }
 export async function createCategory(ctx: AuthContext, input: CategoryCreate): Promise<Category> {
@@ -120,7 +126,7 @@ export async function deleteCategory(ctx: AuthContext, id: string, reassignTo?: 
   if (reassignTo === id) fail("VALIDATION_FAILED", "Reassignment target must be another category.");
   if (reassignTo) await expenseCategory(ctx, reassignTo);
   const used = await db.get<{ n: number }>(
-    sql`SELECT (EXISTS(SELECT 1 FROM transactions WHERE user_id=${ctx.id} AND category_id=${id}) OR EXISTS(SELECT 1 FROM budget_assignments WHERE user_id=${ctx.id} AND category_id=${id})) n`,
+    sql`SELECT (EXISTS(SELECT 1 FROM transactions WHERE user_id=${ctx.id} AND category_id=${id}) OR EXISTS(SELECT 1 FROM transaction_shares WHERE user_id=${ctx.id} AND category_id=${id}) OR EXISTS(SELECT 1 FROM budget_assignments WHERE user_id=${ctx.id} AND category_id=${id})) n`,
   );
   if (used?.n && !reassignTo)
     fail("CATEGORY_IN_USE", "Provide reassign_to to move transactions and assignments.", 409);
@@ -130,6 +136,10 @@ export async function deleteCategory(ctx: AuthContext, id: string, reassignTo?: 
   if (reassignTo) {
     const now = new Date().toISOString();
     await write(ctx, "delete", "category", id, { reassign_to: reassignTo }, [
+      db
+        .update(transactionShares)
+        .set({ category_id: reassignTo, updated_at: now })
+        .where(and(eq(transactionShares.user_id, ctx.id), eq(transactionShares.category_id, id))),
       db
         .update(transactions)
         .set({ category_id: reassignTo, updated_at: now })

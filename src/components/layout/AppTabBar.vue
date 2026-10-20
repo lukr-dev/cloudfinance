@@ -29,12 +29,10 @@ const items: { to: string; icon: IconName; label: string }[] = [
       <span class="tab__icon">
         <AppIcon :name="item.icon" :size="22" />
         <span
-          v-if="item.to === '/transactions' && ui.uncategorizedCount"
+          v-if="item.to === '/transactions' && ui.reviewCount"
           class="tab__badge num"
-          :aria-label="
-            t('budget.uncategorized', { n: ui.uncategorizedCount }, ui.uncategorizedCount)
-          "
-          >{{ ui.uncategorizedCount }}</span
+          :aria-label="t('budget.uncategorized', { n: ui.reviewCount }, ui.reviewCount)"
+          >{{ ui.reviewCount }}</span
         >
       </span>
       <span class="tab__label">{{ t(item.label) }}</span>
