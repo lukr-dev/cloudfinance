@@ -9,7 +9,7 @@ const handle = defineHandler(async (c) => {
     const auth = await requireAuthContext(c);
     if (auth.via !== "api_key") throw new HTTPException(401);
     await getSettings(auth);
-    return await mcpHandler(auth).fetch(c.req.raw);
+    return await mcpHandler(auth, new URL(c.req.url).origin).fetch(c.req.raw);
   } catch (error) {
     if (error instanceof HTTPException && (error.status === 401 || error.status === 429)) {
       // Drain without buffering so the local Worker proxy can complete rejected POSTs.

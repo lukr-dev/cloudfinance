@@ -1,6 +1,7 @@
 # cloudfinance — Architecture (Phase 1)
 
-Single-user, zero-based budgeting app that runs entirely on Cloudflare (free tier where possible).
+Zero-based budgeting app for a small household, running entirely on Cloudflare (free tier where possible).
+Each user has a private budget; users on the same instance can share individual entries (see *Members and shared entries*).
 Agents are first-class users: everything the UI can do, an agent can do via REST or MCP.
 
 ## Stack
@@ -22,7 +23,7 @@ Free-tier notes: Workers free plan = ~10 ms CPU per request. Keep request handle
 ## Auth
 
 - Email + password **and** passkeys (Better Auth passkey plugin).
-- **Sign-up is closed once one user exists.** First visit with an empty user table shows a
+- **Sign-up is invite-only once one user exists** (see *Members and invitations*). First visit with an empty user table shows a
   one-time "create your account" screen; afterwards sign-up endpoints reject.
 - Initial account creation requires `X-Setup-Token` matching the production `SETUP_TOKEN`
   secret (constant-time digest comparison). A missing secret fails closed with
@@ -40,8 +41,9 @@ Free-tier notes: Workers free plan = ~10 ms CPU per request. Keep request handle
   REST and MCP share the key's quota: 600 accepted requests, resetting after a
   60-second gap since the last accepted request in the installed Better Auth plugin.
   Clients should wait for `Retry-After` and reuse the same key; invalid or revoked keys remain 401.
-- All domain rows carry `user_id` and every query is scoped by it. Single-user today, but we
-  don't want a painful migration if that changes.
+- All domain rows carry `user_id` and every query is scoped by it. A user never reads another
+  user's accounts, categories, budget, transactions or audit log. The only cross-user data is
+  a shared entry (see below), plus the admin's member list.
 
 ## Money
 
@@ -81,7 +83,7 @@ Tables (all with `id` as text ULID/UUID, `user_id`, `created_at`, `updated_at`):
   `entity_id`, `payload` (JSON). Every write through REST or MCP is logged, so agent changes
   stay traceable.
 
-Splits, rules, payee entities, targets and connectors are **Phase 2**. Don't build them, and
+Rules, payee entities, targets and connectors are **Phase 2**. Don't build them, and
 don't shape the schema in ways that block them.
 
 ### Budget math (per currency `c`, month `m`)
@@ -116,6 +118,110 @@ Only transactions in **on-budget** accounts count.
 - A transaction's `currency` always equals its account's currency.
 - A category with transactions or assignments can't be deleted unless the request names a target to move them to (`reassign_to`).
 - An account with transactions can't be deleted, only closed.
+
+## Members and invitations
+
+- The first user is the instance **admin**. Every later user joins through an invitation.
+- **members** — `user_id` (PK, FK `user`, cascade), `role` (`admin` | `member`), `invited_by`
+  (nullable user id), `joined_at`. The migration backfills the existing user as `admin`.
+  Exactly one admin.
+- **invitations** — `id`, `created_by`, `email` (nullable; when set, only that email may join),
+  `token_hash` (SHA-256 hex of the token; the plaintext is never stored), `expires_at`
+  (created + 7 days), `used_at`, `used_by`, `revoked_at`, `created_at`.
+- Only the admin creates, lists and revokes invitations. Creating one returns the plaintext token
+  and the join URL `/join?token=…` exactly once. No email is sent: the admin copies the link.
+- Sign-up (`user.create.before`): with no users, the existing setup-token rule applies. Otherwise
+  the request must carry `X-Invite-Token` with an unexpired, unused, unrevoked invitation (and a
+  matching email when the invitation names one), else `SIGN_UP_CLOSED` (403), `INVITE_INVALID`
+  (403, unknown/expired/used/revoked) or `INVITE_EMAIL_MISMATCH` (403). After the user is created,
+  the invitation is marked used and a `members` row (`member`) is inserted.
+- The public `GET /api/v1/invite-status?token=` returns `{ valid, email, invited_by_name }`
+  (no auth; reveals nothing for invalid tokens beyond `valid: false`).
+- `GET /me` includes `role`.
+- Removing members is not in scope yet.
+
+## Members and shared entries
+
+A user (the **owner**) can share one of their transactions with other users on the same instance,
+addressed by **email**. The owner records the full amount as it hit their bank account and
+decides how it is split. **Each person's budget counts only their own part.** There is no debt
+tracking, "owed" balance or settle-up: nobody sees another user's balances.
+
+Example: Lukas pays CHF 200 insurance from his checking account and shares it 50/50 with Anna.
+- Lukas: checking shows −200 (balances use the full amount). His Insurance category activity is −100.
+- Anna: a CHF −100 **incoming share** appears in her budget right away, uncategorised, until she
+  picks one of her own categories. It belongs to no account and does not change her balances.
+- If Anna pays Lukas back, both of them categorise that real transfer as **Shared repayment**
+  (see below), so it doesn't touch either budget again.
+
+### Data
+
+- **transactions** gains `shared_out_minor` (integer, default 0): the sum of the *active*
+  participants' shares, same sign as `amount_minor` (or 0), `|shared_out_minor| ≤ |amount_minor|`.
+  The owner's **own part** is `amount_minor − shared_out_minor`.
+- **transaction_shares** — one row per participant; `user_id` is the **participant**, so the
+  participant's queries stay scoped by `user_id`. Columns: `id`, `user_id`, `created_at`,
+  `updated_at`, `transaction_id` (owner's transaction, cascade delete), `owner_user_id`,
+  `amount_minor` (participant's part, same sign as the transaction, nonzero), `percent_bp`
+  (basis points, set only for `percent`), `currency`, `date`, `payee`, `memo` (copied from the
+  owner's transaction and kept in sync), `category_id` (participant's own category, nullable;
+  FK `(user_id, category_id)`), `status` (`active` | `declined`). Unique
+  `(transaction_id, user_id)`.
+- The owner's transaction stores `split_method` (`equal` | `percent` | `amount`, nullable when not
+  shared).
+- New system category per user: `kind = 'repayment'` ("Shared repayment"), no group, created like
+  the income category, cannot be renamed or deleted, never in the budget table. Transactions in
+  it count in balances but in no budget figure (not activity, not Ready to Assign, not
+  uncategorised).
+
+### Splitting rules
+
+- Shareable: non-transfer transactions in **on-budget** accounts with `amount_minor ≠ 0`.
+  Transfers, off-budget transactions and transactions in the repayment category can't be shared.
+- Participants are addressed by email (case-insensitive) and must be users of this instance
+  (`SHARE_RECIPIENT_NOT_FOUND`, 404). Not yourself, no duplicates (`VALIDATION_FAILED`). Max 10.
+- `equal`: total split over participants + owner; each participant gets the total divided by
+  (n + 1), truncated toward zero; the remainder stays with the owner.
+- `percent`: each participant gives `percent_bp` (1–10000); the sum ≤ 10000; each share is
+  truncated toward zero; the remainder stays with the owner.
+- `amount`: each participant gives `amount_minor` with the transaction's sign, nonzero;
+  `|Σ| ≤ |amount_minor|`.
+- The owner's own part may be 0 (they paid entirely for someone else).
+- Changing the owner's amount recomputes `equal`/`percent` shares; for `amount` it must still
+  fit, else `VALIDATION_FAILED`. Date/payee/memo changes propagate to the share rows. Turning a
+  shared transaction into a transfer, or its category into repayment, fails unless the share is
+  removed in the same request.
+- Replacing the participant list keeps the participant's `category_id` for people who stay and
+  resets their `status` to `active`. Removed participants' rows are deleted.
+- Deleting the owner's transaction deletes its shares.
+- When a share lands in a currency the participant hasn't enabled, it is added to their
+  `enabled_currencies`.
+
+### Participant actions
+
+- Set `category_id` (own expense or income category, or `null`).
+- `status: 'declined'` removes the share from their budget; the owner's `shared_out_minor` drops
+  accordingly and the owner sees it as declined. `status: 'active'` re-accepts it.
+- A participant can't change amounts, dates or payees.
+
+### Budget math with shares
+
+- Category activity, available, `activity_this_month`, `available_total` and Ready to Assign use
+  `amount_minor − shared_out_minor` for the user's own transactions **plus** the user's active
+  incoming shares (by `date`, `currency`, `category_id`). Shares categorised as income count
+  toward Ready to Assign. Account balances keep using `amount_minor`.
+- `uncategorized_count` also counts active incoming shares without a category.
+  `GET /budget/:month` adds `uncategorized_shares_count`.
+- Category month (`GET /budget/:month/categories/:id`) adds `shares`: the user's active incoming
+  shares in that category and month.
+- Deleting a category with `reassign_to` also moves the user's share rows.
+
+### Audit
+
+Every share write is logged in the actor's audit log. Creating, changing or removing a share also
+writes an event in each affected participant's log (`action` `share_received` | `share_updated`
+| `share_removed`, `entity` `transaction_share`, payload with the owner's name and email), and a
+participant's decline writes `share_declined` into the owner's log.
 
 ## Code layout
 
@@ -152,6 +258,23 @@ JSON in and out; amounts in minor units; errors are `{ error: { code, message, d
 - `GET/PATCH/DELETE /transactions/:id`
 - `GET /payees?q=` — distinct payee names (autocomplete)
 - `GET /audit-events?cursor&limit`
+- Transactions carry `split_method`, `shared_out_minor`, `own_amount_minor` and `share`
+  (`null`, or `{ split_method, participants: [{ share_id, user_id, name, email, amount_minor,
+  percent_bp, status }] }` — only on the owner's view).
+  `POST /transactions` (single, not batch items with transfers) and `PATCH /transactions/:id`
+  accept `share: { split_method, participants: [{ email, percent_bp? | amount_minor? }] }`;
+  `PATCH` also accepts `share: null` to stop sharing.
+- `GET /shares?status=active|declined&uncategorized=true&from&to&cursor&limit` — the user's
+  incoming shares, newest first: `{ shares: [{ id, transaction_id, owner: { user_id, name, email },
+  date, payee, memo, currency, total_minor, amount_minor, split_method, percent_bp,
+  category_id, category_name, category_color, status }], next_cursor }`.
+- `PATCH /shares/:id` `{ category_id?, status? }`
+- `GET /share-contacts` — users you have shared with or received shares from:
+  `[{ user_id, name, email }]` (for email autocomplete; no full member directory).
+- Admin only (`FORBIDDEN`, 403 otherwise): `GET /members`
+  (`[{ user_id, name, email, role, joined_at }]`), `GET/POST /invitations`
+  (`POST { email? }` → `{ invitation, token, url }`), `DELETE /invitations/:id` (revoke).
+- Public: `GET /invite-status?token=`.
 - `GET /openapi.json` — machine-readable spec for agents
 
 ## MCP (`/mcp`)
@@ -163,6 +286,8 @@ JSON in and out; amounts in minor units; errors are `{ error: { code, message, d
 - Tool results: `structuredContent` is always a JSON object (lists are wrapped as `{ items }`)
   and is mirrored as JSON text for clients that only read `content`.
 - Auth: the same API key as REST, `Authorization: Bearer <key>`. OAuth is Phase 2.
+- Tools also cover sharing: the `share` field on create/update transaction, list/update incoming
+  shares, list share contacts; admins can list members and create/revoke invitations.
 - Tools mirror the REST surface (read + write): settings, accounts, categories, budget month,
   assign, move money, list/create/update/delete transactions. Tool descriptions document the
   sign convention and minor units clearly, because agents will get this wrong otherwise.

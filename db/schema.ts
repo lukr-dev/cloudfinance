@@ -89,7 +89,7 @@ export const categories = sqliteTable(
     ...base(),
     group_id: text("group_id"),
     name: text("name").notNull(),
-    kind: text("kind", { enum: ["expense", "income"] })
+    kind: text("kind", { enum: ["expense", "income", "repayment"] })
       .notNull()
       .default("expense"),
     color: text("color").notNull(),
@@ -102,6 +102,9 @@ export const categories = sqliteTable(
     uniqueIndex("one_income_category")
       .on(t.user_id)
       .where(sql`${t.kind} = 'income'`),
+    uniqueIndex("one_repayment_category")
+      .on(t.user_id)
+      .where(sql`${t.kind} = 'repayment'`),
     index("categories_group_order").on(t.user_id, t.group_id, t.sort_order),
     foreignKey({
       columns: [t.user_id, t.group_id],
@@ -109,7 +112,7 @@ export const categories = sqliteTable(
     }),
     check(
       "categories_kind",
-      sql`(${t.kind}='income' AND ${t.group_id} IS NULL) OR (${t.kind}='expense' AND ${t.group_id} IS NOT NULL)`,
+      sql`(${t.kind} IN ('income','repayment') AND ${t.group_id} IS NULL) OR (${t.kind}='expense' AND ${t.group_id} IS NOT NULL)`,
     ),
     check(
       "categories_color",
@@ -168,6 +171,8 @@ export const transactions = sqliteTable(
       (): AnySQLiteColumn => transactions.id,
       { onDelete: "no action" },
     ),
+    split_method: text("split_method", { enum: ["equal", "percent", "amount"] }),
+    shared_out_minor: integer("shared_out_minor").notNull().default(0),
     source: text("source").notNull(),
     external_id: text("external_id"),
   },
@@ -192,6 +197,14 @@ export const transactions = sqliteTable(
     check(
       "transactions_amount",
       sql`typeof(${t.amount_minor})='integer' AND abs(${t.amount_minor})<=9007199254740991`,
+    ),
+    check(
+      "transactions_split",
+      sql`${t.split_method} IS NULL OR ${t.split_method} IN ('equal','percent','amount')`,
+    ),
+    check(
+      "transactions_shared_amount",
+      sql`typeof(${t.shared_out_minor})='integer' AND abs(${t.shared_out_minor})<=abs(${t.amount_minor}) AND (${t.shared_out_minor}=0 OR (${t.shared_out_minor}>0)=(${t.amount_minor}>0))`,
     ),
     check("transactions_cleared", sql`${t.cleared} IN ('uncleared','cleared','reconciled')`),
     check(
@@ -224,5 +237,86 @@ export const auditEvents = sqliteTable(
     index("audit_user_at").on(t.user_id, t.at, t.id),
     check("audit_actor_type", sql`${t.actor_type} IN ('user','api_key')`),
     check("audit_payload_json", sql`json_valid(${t.payload})`),
+  ],
+);
+
+export const members = sqliteTable(
+  "members",
+  {
+    user_id: text("user_id")
+      .primaryKey()
+      .references(() => authUser.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["admin", "member"] }).notNull(),
+    invited_by: text("invited_by").references(() => authUser.id),
+    joined_at: text("joined_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("one_admin")
+      .on(t.role)
+      .where(sql`${t.role}='admin'`),
+    check("members_role", sql`${t.role} IN ('admin','member')`),
+  ],
+);
+export const invitations = sqliteTable(
+  "invitations",
+  {
+    id: text("id").primaryKey(),
+    created_by: text("created_by")
+      .notNull()
+      .references(() => authUser.id),
+    email: text("email"),
+    token_hash: text("token_hash").notNull(),
+    expires_at: text("expires_at").notNull(),
+    used_at: text("used_at"),
+    used_by: text("used_by").references(() => authUser.id),
+    revoked_at: text("revoked_at"),
+    created_at: text("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("invitations_token_hash").on(t.token_hash),
+    index("invitations_creator").on(t.created_by, t.created_at),
+  ],
+);
+export const transactionShares = sqliteTable(
+  "transaction_shares",
+  {
+    ...base(),
+    transaction_id: text("transaction_id").notNull(),
+    owner_user_id: text("owner_user_id")
+      .notNull()
+      .references(() => authUser.id),
+    amount_minor: integer("amount_minor").notNull(),
+    percent_bp: integer("percent_bp"),
+    currency: text("currency").notNull(),
+    date: text("date").notNull(),
+    payee: text("payee").notNull(),
+    memo: text("memo").notNull(),
+    category_id: text("category_id"),
+    status: text("status", { enum: ["active", "declined"] })
+      .notNull()
+      .default("active"),
+  },
+  (t) => [
+    uniqueIndex("shares_transaction_user").on(t.transaction_id, t.user_id),
+    index("shares_user_date").on(t.user_id, t.date, t.id),
+    index("shares_owner").on(t.owner_user_id, t.transaction_id),
+    foreignKey({
+      columns: [t.owner_user_id, t.transaction_id],
+      foreignColumns: [transactions.user_id, transactions.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.user_id, t.category_id],
+      foreignColumns: [categories.user_id, categories.id],
+    }),
+    check(
+      "shares_amount",
+      sql`typeof(${t.amount_minor})='integer' AND ${t.amount_minor}!=0 AND abs(${t.amount_minor})<=9007199254740991`,
+    ),
+    check(
+      "shares_percent",
+      sql`${t.percent_bp} IS NULL OR (typeof(${t.percent_bp})='integer' AND ${t.percent_bp} BETWEEN 1 AND 10000)`,
+    ),
+    check("shares_status", sql`${t.status} IN ('active','declined')`),
+    check("shares_not_owner", sql`${t.user_id}!=${t.owner_user_id}`),
   ],
 );

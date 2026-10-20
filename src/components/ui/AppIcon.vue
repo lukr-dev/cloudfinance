@@ -32,6 +32,11 @@ const paths = {
   inbox: "M4 13h4l1.5 3h5L16 13h4M5 5h14l1 8v6H4v-6l1-8Z",
   external: "M14 5h5v5M19 5l-8 8M11 5H5v14h14v-6",
   more: "M5 12h.01M12 12h.01M19 12h.01",
+  users:
+    "M15 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm12 9v-1a4 4 0 0 0-3-3.9M15 3.1a4 4 0 0 1 0 7.8",
+  "user-plus":
+    "M15 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm10-3v6m-3-3h6",
+  link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
 } as const;
 
 export type IconName = keyof typeof paths;

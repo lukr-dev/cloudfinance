@@ -2,10 +2,13 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
-import type { Settings } from "../../shared/schemas";
+import type { Invitation, Member, Settings } from "../../shared/schemas";
+import { getMe } from "../api";
 import { auth } from "../api/auth";
+import { api } from "../api/http";
 import PageLayout from "../components/layout/PageLayout.vue";
 import CurrencyPicker from "../components/settings/CurrencyPicker.vue";
+import InviteDialog from "../components/settings/InviteDialog.vue";
 import IconButton from "../components/ui/IconButton.vue";
 import SegmentedControl from "../components/ui/SegmentedControl.vue";
 import UiButton from "../components/ui/UiButton.vue";
@@ -36,6 +39,10 @@ const { push } = useToasts();
 const showError = useErrorToast();
 
 const passkeys = ref<PasskeyRow[]>([]);
+const isAdmin = ref(false);
+const members = ref<Member[]>([]);
+const invitations = ref<Invitation[]>([]);
+const inviteOpen = ref(false);
 const pickerOpen = ref(false);
 const s = computed(() => settings.settings!);
 
@@ -70,6 +77,40 @@ async function loadPasskeys() {
   passkeys.value = (data ?? []) as PasskeyRow[];
 }
 onMounted(loadPasskeys);
+
+async function loadMembers() {
+  try {
+    const [m, i] = await Promise.all([
+      api<Member[]>("GET", "/members"),
+      api<Invitation[]>("GET", "/invitations"),
+    ]);
+    members.value = m;
+    invitations.value = i.filter((x) => x.status === "pending");
+  } catch (e) {
+    showError(e);
+  }
+}
+onMounted(async () => {
+  isAdmin.value = (await getMe().catch(() => null))?.role === "admin";
+  if (isAdmin.value) await loadMembers();
+});
+
+async function revoke(invitation: Invitation) {
+  try {
+    await api("DELETE", `/invitations/${invitation.id}`);
+    push(t("members.revoked"));
+    await loadMembers();
+  } catch (e) {
+    showError(e);
+  }
+}
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
 
 async function addPasskey() {
   const result = await auth.passkey.addPasskey({
@@ -178,6 +219,46 @@ async function signOut() {
         </div>
       </section>
 
+      <section v-if="isAdmin" class="group">
+        <h2>{{ t("members.title") }}</h2>
+        <ul class="members">
+          <li v-for="m in members" :key="m.user_id" class="member">
+            <span class="avatar">{{ initials(m.name || m.email) }}</span>
+            <span class="member__who">
+              {{ m.name
+              }}<span v-if="m.user_id === session.user?.id" class="you">
+                · {{ t("members.you") }}</span
+              >
+              <small>{{ m.email }}</small>
+            </span>
+            <span class="role" :class="`role--${m.role}`">{{ t(`members.roles.${m.role}`) }}</span>
+          </li>
+        </ul>
+
+        <div class="row row--top invites">
+          <div class="row__label">
+            {{ t("members.invitations") }}
+            <p>{{ t("members.invitationsHint") }}</p>
+          </div>
+          <div class="invites__list">
+            <div v-for="inv in invitations" :key="inv.id" class="invite">
+              <span>
+                {{ inv.email ?? t("members.anyone") }}
+                <small>{{
+                  t("members.expires", { date: formatDateTime(inv.expires_at, locale) })
+                }}</small>
+              </span>
+              <UiButton size="sm" variant="ghost" @click="revoke(inv)">{{
+                t("members.revoke")
+              }}</UiButton>
+            </div>
+            <UiButton size="sm" icon="user-plus" @click="inviteOpen = true">{{
+              t("members.invite")
+            }}</UiButton>
+          </div>
+        </div>
+      </section>
+
       <section class="group">
         <h2>{{ t("settings.security") }}</h2>
         <div class="row row--top">
@@ -212,6 +293,7 @@ async function signOut() {
       </section>
     </div>
     <CurrencyPicker v-model:open="pickerOpen" :enabled="s.enabled_currencies" @pick="enable" />
+    <InviteDialog v-model:open="inviteOpen" @created="loadMembers" />
   </PageLayout>
 </template>
 
@@ -296,7 +378,83 @@ async function signOut() {
   color: var(--text-faint);
   font-size: var(--text-xs);
 }
+.members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.member {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+.member__who {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+.member__who small {
+  display: block;
+  font-weight: 400;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.you {
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.role {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.role--admin {
+  background: var(--ink);
+  color: var(--text-inverse);
+}
+.invites__list {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+  min-width: 280px;
+}
+.invite {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  font-size: 0.875rem;
+}
+.invite small {
+  display: block;
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
 @media (max-width: 640px) {
+  .invites__list {
+    justify-items: stretch;
+    min-width: 0;
+  }
   .settings {
     gap: var(--space-8);
   }

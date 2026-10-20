@@ -6,9 +6,12 @@ import type { Transaction, TransactionList } from "../../shared/schemas";
 import { api } from "../api/http";
 import PageLayout from "../components/layout/PageLayout.vue";
 import CategoryCell from "../components/transactions/CategoryCell.vue";
+import CategoryOptions from "../components/transactions/CategoryOptions.vue";
 import TransactionRows from "../components/transactions/TransactionRows.vue";
 import AppIcon from "../components/ui/AppIcon.vue";
+import IncomingShares from "../components/transactions/IncomingShares.vue";
 import EmptyState from "../components/ui/EmptyState.vue";
+import SegmentedControl from "../components/ui/SegmentedControl.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import { useErrorToast } from "../composables/errors";
 import { institutionName } from "../composables/institutions";
@@ -35,6 +38,27 @@ const cursor = ref<string | null>(null);
 const loading = ref(false);
 const search = ref((route.query.q as string) ?? "");
 
+const shared = computed(() => route.query.view === "shared");
+const viewModel = computed({
+  get: () => (shared.value ? "shared" : "mine"),
+  set: (value: "mine" | "shared") =>
+    void router.replace({
+      query: {
+        ...(route.query.q ? { q: route.query.q } : {}),
+        ...(value === "shared" ? { view: "shared" } : {}),
+      },
+    }),
+});
+const viewOptions = computed(() => [
+  { value: "mine" as const, label: t("share.tabMine") },
+  {
+    value: "shared" as const,
+    label: ui.sharedUncategorizedCount
+      ? `${t("share.tabShared")} · ${ui.sharedUncategorizedCount}`
+      : t("share.tabShared"),
+  },
+]);
+
 const filters = computed(() => ({
   account: (route.query.account as string) || "",
   category: (route.query.category as string) || "",
@@ -45,7 +69,9 @@ const account = computed(() => accounts.byId.get(filters.value.account) ?? null)
 const filtered = computed(() => Object.values(filters.value).some(Boolean));
 
 function setFilter(
-  patch: Partial<Record<"account" | "category" | "uncategorized" | "q", string | undefined>>,
+  patch: Partial<
+    Record<"account" | "category" | "uncategorized" | "q" | "view", string | undefined>
+  >,
 ) {
   const merged: Record<string, unknown> = { ...route.query, ...patch };
   const query = Object.fromEntries(Object.entries(merged).filter(([, value]) => value)) as Record<
@@ -62,6 +88,7 @@ watch(search, (value) => {
 });
 
 async function load(more = false) {
+  if (shared.value) return;
   loading.value = true;
   try {
     const f = filters.value;
@@ -83,7 +110,7 @@ async function load(more = false) {
     loading.value = false;
   }
 }
-watch([filters, () => ui.revision], () => load(), { immediate: true, deep: true });
+watch([filters, shared, () => ui.revision], () => load(), { immediate: true, deep: true });
 
 async function toggleCleared(tx: Transaction) {
   if (tx.cleared === "reconciled") return;
@@ -97,6 +124,15 @@ async function toggleCleared(tx: Transaction) {
   }
 }
 
+function sharedTitle(tx: Transaction) {
+  return tx
+    .share!.participants.map(
+      (p) =>
+        `${p.name || p.email} · ${format(p.amount_minor, tx.currency)}${p.status === "declined" ? ` (${t("share.declined")})` : ""}`,
+    )
+    .join("\n");
+}
+
 function sourceLabel(source: string) {
   if (source.startsWith("import:")) return t("transactions.sources.import");
   return t(`transactions.sources.${source}`);
@@ -105,6 +141,9 @@ function sourceLabel(source: string) {
 
 <template>
   <PageLayout :title="account ? account.name : t('transactions.title')" wide>
+    <template v-if="!account && (ui.hasIncomingShares || shared)" #toolbar>
+      <SegmentedControl v-model="viewModel" :label="t('share.tabs')" :options="viewOptions" />
+    </template>
     <template #actions>
       <UiButton v-if="account" icon="edit" compact @click="ui.openAccount(account)">{{
         t("common.edit")
@@ -119,7 +158,7 @@ function sourceLabel(source: string) {
       </UiButton>
     </template>
 
-    <div v-if="account" class="balances">
+    <div v-if="account && !shared" class="balances">
       <div class="balances__main">
         <span class="label">{{
           [t("accounts.balance"), institutionName(account.institution)].filter(Boolean).join(" · ")
@@ -149,6 +188,7 @@ function sourceLabel(source: string) {
         />
       </label>
       <select
+        v-if="!shared"
         class="input"
         :value="filters.account"
         :aria-label="t('transactions.account')"
@@ -158,18 +198,14 @@ function sourceLabel(source: string) {
         <option v-for="a in accounts.accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
       </select>
       <select
+        v-if="!shared"
         class="input"
         :value="filters.category"
         :aria-label="t('transactions.category')"
         @change="setFilter({ category: ($event.target as HTMLSelectElement).value })"
       >
         <option value="">{{ t("transactions.allCategories") }}</option>
-        <option v-if="catalog.income" :value="catalog.income.id">
-          {{ t("transactions.readyToAssign") }}
-        </option>
-        <optgroup v-for="entry in catalog.grouped" :key="entry.group.id" :label="entry.group.name">
-          <option v-for="c in entry.categories" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </optgroup>
+        <CategoryOptions />
       </select>
       <label class="checkbox only-uncategorized">
         <input
@@ -182,80 +218,102 @@ function sourceLabel(source: string) {
           "
         />
         {{ t("transactions.onlyUncategorized") }}
-        <span v-if="ui.uncategorizedCount" class="count num">{{ ui.uncategorizedCount }}</span>
+        <span
+          v-if="shared ? ui.sharedUncategorizedCount : ui.uncategorizedCount"
+          class="count num"
+          >{{ shared ? ui.sharedUncategorizedCount : ui.uncategorizedCount }}</span
+        >
       </label>
     </div>
 
-    <TransactionRows v-if="rows.length && phone" :transactions="rows" :hide-account="!!account" />
-    <table v-else-if="rows.length" class="data-table tx">
-      <thead>
-        <tr>
-          <th class="left col-date">{{ t("transactions.date") }}</th>
-          <th v-if="!account" class="left hide-md">{{ t("transactions.account") }}</th>
-          <th class="left">{{ t("transactions.payee") }}</th>
-          <th class="left">{{ t("transactions.category") }}</th>
-          <th class="col-amount">{{ t("transactions.amount") }}</th>
-          <th class="col-flags">
-            <span class="sr-only">{{ t("transactions.cleared") }}</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          v-for="tx in rows"
-          :key="tx.id"
-          tabindex="0"
-          @click="ui.openTransaction(tx)"
-          @keydown.enter="ui.openTransaction(tx)"
-        >
-          <td class="left muted">{{ formatDate(tx.date, locale) }}</td>
-          <td v-if="!account" class="left muted hide-md ellipsis">{{ tx.account_name }}</td>
-          <td class="left payee ellipsis">
-            {{ tx.payee || "—" }}<span v-if="tx.memo" class="memo">{{ tx.memo }}</span>
-          </td>
-          <td class="left"><CategoryCell :transaction="tx" /></td>
-          <td class="num" :class="{ inflow: tx.amount_minor > 0 }">
-            {{ format(tx.amount_minor, tx.currency, { signed: true }) }}
-          </td>
-          <td class="flags">
-            <span v-if="tx.source !== 'manual'" class="source" :title="sourceLabel(tx.source)">
-              <AppIcon
-                :name="tx.source === 'mcp' || tx.source === 'api' ? 'agents' : 'inbox'"
-                :size="13"
-                :stroke-width="2"
-              />
-            </span>
-            <button
-              type="button"
-              class="cleared"
-              :class="`cleared--${tx.cleared}`"
-              :title="t(`transactions.status.${tx.cleared}`)"
-              :aria-label="t(`transactions.status.${tx.cleared}`)"
-              @click.stop="toggleCleared(tx)"
-            >
-              C
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <IncomingShares v-if="shared" :q="filters.q" :uncategorized="filters.uncategorized" />
+    <template v-else>
+      <TransactionRows v-if="rows.length && phone" :transactions="rows" :hide-account="!!account" />
+      <table v-else-if="rows.length" class="data-table tx">
+        <thead>
+          <tr>
+            <th class="left col-date">{{ t("transactions.date") }}</th>
+            <th v-if="!account" class="left hide-md">{{ t("transactions.account") }}</th>
+            <th class="left">{{ t("transactions.payee") }}</th>
+            <th class="left">{{ t("transactions.category") }}</th>
+            <th class="col-amount">{{ t("transactions.amount") }}</th>
+            <th class="col-flags">
+              <span class="sr-only">{{ t("transactions.cleared") }}</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="tx in rows"
+            :key="tx.id"
+            tabindex="0"
+            @click="ui.openTransaction(tx)"
+            @keydown.enter="ui.openTransaction(tx)"
+          >
+            <td class="left muted">{{ formatDate(tx.date, locale) }}</td>
+            <td v-if="!account" class="left muted hide-md ellipsis">{{ tx.account_name }}</td>
+            <td class="left payee ellipsis">
+              {{ tx.payee || "—" }}<span v-if="tx.memo" class="memo">{{ tx.memo }}</span>
+            </td>
+            <td class="left"><CategoryCell :transaction="tx" /></td>
+            <td class="num" :class="{ inflow: tx.amount_minor > 0 }">
+              {{ format(tx.amount_minor, tx.currency, { signed: true }) }}
+              <span v-if="tx.share" class="own">{{
+                t("share.yourPartShort", {
+                  amount: format(tx.own_amount_minor, tx.currency, { signed: true }),
+                })
+              }}</span>
+            </td>
+            <td class="flags">
+              <span
+                v-if="tx.share"
+                class="source shared"
+                :class="{
+                  'shared--declined': tx.share.participants.some((p) => p.status === 'declined'),
+                }"
+                :title="sharedTitle(tx)"
+              >
+                <AppIcon name="users" :size="13" :stroke-width="2" />
+              </span>
+              <span v-if="tx.source !== 'manual'" class="source" :title="sourceLabel(tx.source)">
+                <AppIcon
+                  :name="tx.source === 'mcp' || tx.source === 'api' ? 'agents' : 'inbox'"
+                  :size="13"
+                  :stroke-width="2"
+                />
+              </span>
+              <button
+                type="button"
+                class="cleared"
+                :class="`cleared--${tx.cleared}`"
+                :title="t(`transactions.status.${tx.cleared}`)"
+                :aria-label="t(`transactions.status.${tx.cleared}`)"
+                @click.stop="toggleCleared(tx)"
+              >
+                C
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-    <EmptyState
-      v-else-if="!loading"
-      icon="transactions"
-      :title="filtered ? t('transactions.emptyFiltered') : t('transactions.emptyTitle')"
-      :body="filtered ? undefined : t('transactions.emptyBody')"
-    >
-      <UiButton v-if="!filtered" variant="primary" icon="plus" @click="ui.openTransaction()">{{
-        t("transactions.add")
-      }}</UiButton>
-    </EmptyState>
+      <EmptyState
+        v-else-if="!loading"
+        icon="transactions"
+        :title="filtered ? t('transactions.emptyFiltered') : t('transactions.emptyTitle')"
+        :body="filtered ? undefined : t('transactions.emptyBody')"
+      >
+        <UiButton v-if="!filtered" variant="primary" icon="plus" @click="ui.openTransaction()">{{
+          t("transactions.add")
+        }}</UiButton>
+      </EmptyState>
 
-    <div v-if="cursor" class="more">
-      <UiButton :loading="loading" @click="load(true)">{{ t("transactions.loadMore") }}</UiButton>
-    </div>
+      <div v-if="cursor" class="more">
+        <UiButton :loading="loading" @click="load(true)">{{ t("transactions.loadMore") }}</UiButton>
+      </div>
+    </template>
 
-    <template #status>
+    <template v-if="!shared" #status>
       <span
         >{{ t("transactions.count", { n: rows.length }, rows.length) }}{{ cursor ? "+" : "" }}</span
       >
@@ -346,7 +404,18 @@ function sourceLabel(source: string) {
   width: 140px;
 }
 .col-flags {
-  width: 64px;
+  width: 88px;
+}
+.own {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  font-weight: 400;
+}
+.shared--declined {
+  background: var(--caution-soft);
+  color: var(--caution);
 }
 .ellipsis {
   max-width: 280px;

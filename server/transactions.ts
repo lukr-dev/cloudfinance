@@ -11,6 +11,7 @@ import type {
   TransactionList,
   TransactionResult,
 } from "../shared/schemas";
+import { withShares, prepareShares } from "./shares";
 import { write, rowBase } from "./audit";
 import { fail, found } from "./errors";
 import { getAccount } from "./accounts";
@@ -21,7 +22,11 @@ const joined = sql`SELECT t.*, a.name account_name, c.name category_name, c.colo
   FROM transactions t JOIN accounts a ON a.user_id=t.user_id AND a.id=t.account_id
   LEFT JOIN categories c ON c.user_id=t.user_id AND c.id=t.category_id`;
 export async function getTransaction(ctx: AuthContext, id: string): Promise<Transaction> {
-  return found(await db.get<Transaction>(sql`${joined} WHERE t.user_id=${ctx.id} AND t.id=${id}`));
+  return (
+    await withShares(ctx, [
+      found(await db.get<Transaction>(sql`${joined} WHERE t.user_id=${ctx.id} AND t.id=${id}`)),
+    ])
+  )[0]!;
 }
 export async function listTransactions(
   ctx: AuthContext,
@@ -60,7 +65,7 @@ export async function listTransactions(
   const page = rows.slice(0, limit),
     last = page.at(-1);
   return {
-    transactions: page,
+    transactions: await withShares(ctx, page),
     next_cursor: rows.length > limit && last ? encodeCursor(last.date, last.id) : null,
     uncategorized_count: count,
   };
@@ -189,6 +194,9 @@ export async function createTransactions(
   retry = true,
 ): Promise<TransactionResult> {
   const inputs = "transactions" in body ? body.transactions : [body];
+  if ("transactions" in body && inputs.some((i) => i.share))
+    fail("VALIDATION_FAILED", "Sharing requires a single transaction request.");
+  const shareStatements: Array<Parameters<typeof db.batch>[0][number]> = [];
   await incomeCategory(ctx);
   const [ownedAccounts, ownedCategories] = await Promise.all([
     db.select().from(accounts).where(eq(accounts.user_id, ctx.id)),
@@ -221,6 +229,13 @@ export async function createTransactions(
       undefined,
       lookups,
     );
+    if (input.share) {
+      if (!lookups.accounts.get(input.account_id)?.on_budget)
+        fail("VALIDATION_FAILED", "Off-budget transactions cannot be shared.");
+      const plan = await prepareShares(ctx, prepared[0]! as Transaction, input.share);
+      prepared[0]!.split_method = plan.split_method;
+      shareStatements.push(...plan.after);
+    }
     rows.push(...prepared);
     if (input.external_id)
       seen.set(key, {
@@ -246,13 +261,15 @@ export async function createTransactions(
     "cleared",
     "transfer_account_id",
     "transfer_transaction_id",
+    "split_method",
+    "shared_out_minor",
     "source",
     "external_id",
   ];
   const select = sql`SELECT ${sql.join(
     columns.map((name) => sql.raw(`json_extract(value, '$.${name}')`)),
     sql`, `,
-  )} FROM json_each(${JSON.stringify(rows)})`;
+  )} FROM json_each(${JSON.stringify(rows.map((r) => ({ ...r, shared_out_minor: 0 })))})`;
   try {
     await write(
       ctx,
@@ -260,7 +277,7 @@ export async function createTransactions(
       "transaction",
       rows[0]!.id!,
       { source, count: inputs.length - skipped.length, ids: rows.map((r) => r.id) },
-      [db.insert(transactions).select(select)],
+      [db.insert(transactions).select(select), ...shareStatements],
     );
   } catch (error) {
     // A racing importer may claim an external ID after our read. The entire batch rolled back.
@@ -279,7 +296,13 @@ export async function createTransactions(
   );
   // Preserve request/transfer-leg order without re-reading individual rows.
   const byId = new Map(created.map((t) => [t.id, t]));
-  return { created: ids.map((id) => byId.get(id)!), skipped };
+  return {
+    created: await withShares(
+      ctx,
+      ids.map((id) => byId.get(id)!),
+    ),
+    skipped,
+  };
 }
 export async function updateTransaction(
   ctx: AuthContext,
@@ -287,18 +310,23 @@ export async function updateTransaction(
   input: TransactionUpdate,
 ): Promise<Transaction> {
   const current = await getTransaction(ctx, id);
-  if (input.transfer_account_id && input.transfer_account_id !== current.transfer_account_id)
+  if (
+    current.transfer_account_id &&
+    input.transfer_account_id &&
+    input.transfer_account_id !== current.transfer_account_id
+  )
     fail("CONFLICT", "Delete and recreate a transaction to change transfer accounts.", 409);
   let other: Transaction | undefined;
   if (current.transfer_transaction_id)
     other = await getTransaction(ctx, current.transfer_transaction_id);
   if (
     !other &&
-    (input.transfer_account_id ||
-      input.transfer_amount_minor !== undefined ||
-      input.transfer_category_id !== undefined)
+    !input.transfer_account_id &&
+    (input.transfer_amount_minor !== undefined || input.transfer_category_id !== undefined)
   )
-    fail("CONFLICT", "Delete and recreate a transaction to turn it into a transfer.", 409);
+    fail("VALIDATION_FAILED", "Transfer fields require a transfer account.");
+  if (current.split_method && input.transfer_account_id && input.share !== null)
+    fail("VALIDATION_FAILED", "Remove sharing in the same request before creating a transfer.");
   const cross = other && other.currency !== current.currency;
   if (cross && input.amount_minor !== undefined && input.transfer_amount_minor === undefined)
     fail("VALIDATION_FAILED", "Supply both amounts when changing a cross-currency transfer.");
@@ -319,10 +347,18 @@ export async function updateTransaction(
         }
       : {}),
     ...input,
+    share: input.share ?? undefined,
   };
-  const rows = await prepareTransaction(ctx, merged, current.source, [id, other?.id ?? ""]);
+  const rows = await prepareTransaction(ctx, merged, current.source, [
+    id,
+    other?.id ?? crypto.randomUUID(),
+  ]);
+  const plan = await prepareShares(ctx, rows[0]! as Transaction, input.share, current);
+  rows[0]!.split_method = null;
+  rows[0]!.shared_out_minor = 0;
   const statements = rows.map((row, i) => {
     const { id: rowId, user_id: _user, created_at: _created, ...patch } = row;
+    if (i === 1 && !other) return db.insert(transactions).values(row);
     return db
       .update(transactions)
       .set({
@@ -332,13 +368,22 @@ export async function updateTransaction(
       })
       .where(and(eq(transactions.user_id, ctx.id), eq(transactions.id, rowId!)));
   });
-  await write(ctx, "update", "transaction", id, input, [statements[0]!, ...statements.slice(1)]);
+  if (!other && rows.length === 2) statements.reverse();
+  await write(ctx, "update", "transaction", id, input, [
+    ...plan.before,
+    statements[0]!,
+    ...statements.slice(1),
+    ...plan.after,
+  ]);
   return getTransaction(ctx, id);
 }
 export async function deleteTransaction(ctx: AuthContext, id: string) {
   const current = await getTransaction(ctx, id);
   const ids = current.transfer_transaction_id ? [id, current.transfer_transaction_id] : [id];
+  const plan = await prepareShares(ctx, current, null, current);
   await write(ctx, "delete", "transaction", id, { paired_id: current.transfer_transaction_id }, [
+    ...plan.before,
+    ...plan.after,
     db
       .delete(transactions)
       .where(and(eq(transactions.user_id, ctx.id), inArray(transactions.id, ids))),

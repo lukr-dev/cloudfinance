@@ -1,3 +1,4 @@
+import { sharingSmoke } from "./sharing-smoke";
 import { backendSmoke } from "./backend-smoke";
 import { afterAll, beforeAll, expect, it } from "vite-plus/test";
 import { startDevServer } from "./dev-server";
@@ -91,6 +92,7 @@ it("serves the SPA and resolves cookie and verified API-key users, closing sign-
   expect(await passkeys.json()).toEqual([]);
 
   await backendSmoke(base, key.key, key.id, cookie);
+  await sharingSmoke(base, cookie, key.key);
 
   const limitedKey = (await (
     await post("/api/auth/api-key/create", { name: "rate-limit" }, cookie)

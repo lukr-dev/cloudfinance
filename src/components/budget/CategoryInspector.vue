@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import type { BudgetMonth, CategoryMonth } from "../../../shared/schemas";
 import { useMoney } from "../../composables/money";
 import { formatDay, monthLabel } from "../../composables/month";
+import AppIcon from "../ui/AppIcon.vue";
 import AvailablePill from "../ui/AvailablePill.vue";
 import CategoryDot from "../ui/CategoryDot.vue";
 import IconButton from "../ui/IconButton.vue";
@@ -48,6 +49,30 @@ const quick = computed(() => {
     });
   }
   return options;
+});
+
+/** This month's activity: own transactions (only your part) and entries shared with you. */
+const activity = computed(() => {
+  const d = props.detail;
+  if (!d) return [];
+  return [
+    ...d.transactions.map((tx) => ({
+      id: tx.id,
+      date: tx.date,
+      payee: tx.payee,
+      meta: tx.account_name,
+      amount: tx.own_amount_minor,
+      shared: !!tx.share,
+    })),
+    ...d.shares.map((s) => ({
+      id: s.id,
+      date: s.date,
+      payee: s.payee,
+      meta: t("share.fromName", { name: s.owner.name || s.owner.email }),
+      amount: s.amount_minor,
+      shared: true,
+    })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
 });
 
 const net = computed(
@@ -129,16 +154,25 @@ const net = computed(
 
         <section>
           <h3 class="label">{{ t("inspector.thisMonth") }}</h3>
-          <p v-if="!detail.transactions.length" class="faint small">
+          <p v-if="!activity.length" class="faint small">
             {{ t("inspector.noActivity") }}
           </p>
           <ul v-else class="mini-tx">
-            <li v-for="tx in detail.transactions" :key="tx.id">
+            <li v-for="tx in activity" :key="tx.id">
               <span>
                 {{ tx.payee || "—" }}
-                <small>{{ formatDay(tx.date, locale) }} · {{ tx.account_name }}</small>
+                <small
+                  >{{ formatDay(tx.date, locale) }} · {{ tx.meta
+                  }}<AppIcon
+                    v-if="tx.shared"
+                    name="users"
+                    :size="11"
+                    :stroke-width="2"
+                    class="shared-mark"
+                    :aria-label="t('share.title')"
+                /></small>
               </span>
-              <span class="num">{{ format(tx.amount_minor, tx.currency) }}</span>
+              <span class="num">{{ format(tx.amount, cur) }}</span>
             </li>
           </ul>
         </section>
@@ -188,6 +222,11 @@ const net = computed(
 </template>
 
 <style scoped>
+.shared-mark {
+  margin-left: 4px;
+  vertical-align: -1px;
+  color: var(--accent);
+}
 .inspector__head {
   height: var(--topbar-height);
   display: flex;

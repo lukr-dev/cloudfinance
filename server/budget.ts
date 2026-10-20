@@ -15,7 +15,13 @@ import { getSettings } from "./settings";
 import { expenseCategory, listGroups } from "./categories";
 import { write, rowBase } from "./audit";
 import { fail } from "./errors";
+import { categoryShares } from "./shares";
 import { listTransactions } from "./transactions";
+function ledger(ctx: AuthContext) {
+  return sql`SELECT t.user_id,t.date,t.currency,t.category_id,t.amount_minor-t.shared_out_minor amount_minor,t.transfer_account_id,0 is_share
+    FROM transactions t JOIN accounts a ON a.user_id=t.user_id AND a.id=t.account_id WHERE t.user_id=${ctx.id} AND a.on_budget=1
+    UNION ALL SELECT user_id,date,currency,category_id,amount_minor,NULL,1 FROM transaction_shares WHERE user_id=${ctx.id} AND status='active'`;
+}
 export function shiftMonth(month: string, delta: number) {
   const [year, m] = month.split("-").map(Number);
   const d = new Date(Date.UTC(year!, m! - 1 + delta, 1));
@@ -41,8 +47,8 @@ export async function budgetCategories(ctx: AuthContext, month: string, currency
     ), t AS (
       SELECT t.category_id, sum(CASE WHEN substr(t.date,1,7)=${month} THEN t.amount_minor ELSE 0 END) activity,
         sum(t.amount_minor) cumulative
-      FROM transactions t JOIN accounts ac ON ac.user_id=t.user_id AND ac.id=t.account_id
-      WHERE t.user_id=${ctx.id} AND t.currency=${currency} AND t.date<${shiftMonth(month, 1) + "-01"} AND ac.on_budget=1 GROUP BY t.category_id
+      FROM (${ledger(ctx)}) t
+      WHERE t.user_id=${ctx.id} AND t.currency=${currency} AND t.date<${shiftMonth(month, 1) + "-01"} GROUP BY t.category_id
     ) SELECT c.*, coalesce(a.assigned,0) assigned_minor, coalesce(t.activity,0) activity_minor,
       coalesce(a.cumulative,0)+coalesce(t.cumulative,0) available_minor,
       coalesce(a.cumulative,0)+coalesce(t.cumulative,0)-coalesce(a.assigned,0)-coalesce(t.activity,0) carried_over_minor,
@@ -85,6 +91,7 @@ export async function getBudgetMonth(
     activity_this_month_minor: number;
     available_total_minor: number;
     uncategorized_count: number;
+    uncategorized_shares_count: number;
   }>(sql`
     SELECT
       coalesce(sum(CASE WHEN cat.kind='income' THEN t.amount_minor ELSE 0 END),0) -
@@ -94,10 +101,11 @@ export async function getBudgetMonth(
       coalesce(sum(CASE WHEN cat.kind='expense' AND substr(t.date,1,7)=${month} THEN t.amount_minor ELSE 0 END),0) activity_this_month_minor,
       (SELECT coalesce(sum(amount_minor),0) FROM budget_assignments WHERE user_id=${ctx.id} AND currency=${c} AND month<=${month}) +
         coalesce(sum(CASE WHEN cat.kind='expense' AND substr(t.date,1,7)<=${month} THEN t.amount_minor ELSE 0 END),0) available_total_minor,
-      count(CASE WHEN t.category_id IS NULL AND t.transfer_account_id IS NULL AND substr(t.date,1,7)=${month} THEN 1 END) uncategorized_count
-    FROM transactions t JOIN accounts ac ON ac.user_id=t.user_id AND ac.id=t.account_id
+      count(CASE WHEN t.category_id IS NULL AND t.transfer_account_id IS NULL AND substr(t.date,1,7)=${month} THEN 1 END) uncategorized_count,
+      count(CASE WHEN t.is_share=1 AND t.category_id IS NULL AND substr(t.date,1,7)=${month} THEN 1 END) uncategorized_shares_count
+    FROM (${ledger(ctx)}) t
     LEFT JOIN categories cat ON cat.user_id=t.user_id AND cat.id=t.category_id
-    WHERE t.user_id=${ctx.id} AND t.currency=${c} AND ac.on_budget=1`))!;
+    WHERE t.user_id=${ctx.id} AND t.currency=${c}`))!;
   return { month, currency: c, ...summary, groups };
 }
 export async function getCategoryMonth(
@@ -120,8 +128,8 @@ export async function getCategoryMonth(
     SELECT (SELECT coalesce(sum(amount_minor),0) FROM budget_assignments WHERE user_id=${ctx.id} AND category_id=${id} AND currency=${c} AND month=${last}) assigned_last_month_minor,
       coalesce(sum(CASE WHEN substr(t.date,1,7)=${last} THEN -t.amount_minor ELSE 0 END),0) spent_last_month_minor,
       cast(round(coalesce(sum(-t.amount_minor),0)/3.0) AS INTEGER) average_spent_3m_minor
-    FROM transactions t JOIN accounts a ON a.user_id=t.user_id AND a.id=t.account_id
-    WHERE t.user_id=${ctx.id} AND t.category_id=${id} AND t.currency=${c} AND a.on_budget=1 AND t.amount_minor<0 AND t.date>=${start + "-01"} AND t.date<${month + "-01"}`))!;
+    FROM (${ledger(ctx)}) t
+    WHERE t.user_id=${ctx.id} AND t.category_id=${id} AND t.currency=${c} AND t.amount_minor<0 AND t.date>=${start + "-01"} AND t.date<${month + "-01"}`))!;
   const tx = await listTransactions(
     ctx,
     { category_id: id, from: month + "-01", to: shiftMonth(month, 1) + "-01", limit: 20 },
@@ -134,7 +142,14 @@ export async function getCategoryMonth(
     group_available_minor: _v,
     ...category
   } = cat;
-  return { ...category, month, currency: c, ...stats, transactions: tx.transactions };
+  return {
+    ...category,
+    month,
+    currency: c,
+    ...stats,
+    transactions: tx.transactions,
+    shares: await categoryShares(ctx, id, month, c),
+  };
 }
 export async function assignToCategory(
   ctx: AuthContext,

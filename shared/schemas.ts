@@ -95,8 +95,96 @@ export const moveSchema = z
     amount_minor: minorSchema.positive(),
   })
   .strict();
+export const splitMethodSchema = z.enum(["equal", "percent", "amount"]);
+export const shareInputSchema = z
+  .object({
+    split_method: splitMethodSchema,
+    participants: z
+      .array(
+        z
+          .object({
+            email: z.email().max(254),
+            percent_bp: z.number().int().min(1).max(10000).optional(),
+            amount_minor: minorSchema.optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(10),
+  })
+  .strict();
+export const transactionShareSchema = z.object({
+  split_method: splitMethodSchema,
+  participants: z.array(
+    z.object({
+      share_id: z.string(),
+      user_id: z.string(),
+      name: z.string(),
+      email: z.email(),
+      amount_minor: minorSchema,
+      percent_bp: z.number().int().nullable(),
+      status: z.enum(["active", "declined"]),
+    }),
+  ),
+});
+export const shareContactSchema = z.object({
+  user_id: z.string(),
+  name: z.string(),
+  email: z.email(),
+});
+export const incomingShareSchema = z.object({
+  id: z.string(),
+  transaction_id: z.string(),
+  owner: shareContactSchema,
+  date: dateSchema,
+  payee: z.string(),
+  memo: z.string(),
+  currency: currencySchema,
+  total_minor: minorSchema,
+  amount_minor: minorSchema,
+  split_method: splitMethodSchema,
+  percent_bp: z.number().int().nullable(),
+  category_id: z.string().nullable(),
+  category_name: z.string().nullable(),
+  category_color: colorSchema.nullable(),
+  status: z.enum(["active", "declined"]),
+});
+export const incomingShareUpdateSchema = z
+  .object({
+    category_id: idSchema.nullable().optional(),
+    status: z.enum(["active", "declined"]).optional(),
+  })
+  .strict();
+export const memberSchema = shareContactSchema.extend({
+  role: z.enum(["admin", "member"]),
+  joined_at: z.string(),
+});
+export const invitationSchema = z.object({
+  id: z.string(),
+  email: z.email().nullable(),
+  created_by: z.string(),
+  expires_at: z.string(),
+  used_at: z.string().nullable(),
+  used_by: z.string().nullable(),
+  revoked_at: z.string().nullable(),
+  created_at: z.string(),
+  status: z.enum(["pending", "used", "expired", "revoked"]),
+});
+export const invitationCreateSchema = z.object({ email: z.email().max(254).optional() }).strict();
+export const invitationCreatedSchema = z.object({
+  invitation: invitationSchema,
+  token: z.string(),
+  url: z.string(),
+});
+export const inviteStatusSchema = z.object({
+  valid: z.boolean(),
+  email: z.email().nullable(),
+  invited_by_name: z.string().nullable(),
+});
+export const inviteStatusQuerySchema = z.object({ token: z.string().optional() });
 export const transactionCreateSchema = z
   .object({
+    share: shareInputSchema.optional(),
     account_id: idSchema,
     date: dateSchema,
     amount_minor: minorSchema,
@@ -117,7 +205,8 @@ export const transactionCreateSchema = z
   .strict();
 export const transactionUpdateSchema = transactionCreateSchema
   .omit({ account_id: true, external_id: true, source: true })
-  .partial();
+  .partial()
+  .extend({ share: shareInputSchema.nullable().optional() });
 export const transactionBatchSchema = z
   .object({ transactions: z.array(transactionCreateSchema).min(1).max(500) })
   .strict();
@@ -125,6 +214,16 @@ export const transactionBodySchema = z.union([transactionCreateSchema, transacti
 export const pageQuerySchema = z.object({
   cursor: z.string().max(1000).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+export const incomingShareQuerySchema = pageQuerySchema.extend({
+  status: z.enum(["active", "declined"]).optional(),
+  uncategorized: boolQuerySchema.optional(),
+  from: dateSchema.optional(),
+  to: dateSchema.optional(),
+});
+export const incomingShareListSchema = z.object({
+  shares: z.array(incomingShareSchema),
+  next_cursor: z.string().nullable(),
 });
 export const transactionQuerySchema = pageQuerySchema.extend({
   account_id: idSchema.optional(),
@@ -151,15 +250,21 @@ export const accountSchema = accountCreateSchema.required().extend({
   uncleared_balance_minor: minorSchema,
 });
 export const groupSchema = groupCreateSchema.required().extend(row);
-export const categorySchema = categoryCreateSchema
-  .required()
-  .extend({ ...row, group_id: z.string().nullable(), kind: z.enum(["income", "expense"]) });
+export const categorySchema = categoryCreateSchema.required().extend({
+  ...row,
+  group_id: z.string().nullable(),
+  kind: z.enum(["income", "expense", "repayment"]),
+});
 export const assignmentRowSchema = assignmentSchema.extend({
   ...row,
   month: monthSchema,
   category_id: z.string(),
 });
 export const transactionSchema = z.object({
+  split_method: splitMethodSchema.nullable(),
+  shared_out_minor: minorSchema,
+  own_amount_minor: minorSchema,
+  share: transactionShareSchema.nullable(),
   ...row,
   account_id: z.string(),
   date: dateSchema,
@@ -207,6 +312,7 @@ export const budgetMonthSchema = z.object({
   activity_this_month_minor: minorSchema,
   available_total_minor: minorSchema,
   uncategorized_count: z.number().int(),
+  uncategorized_shares_count: z.number().int(),
   groups: z.array(budgetGroupSchema),
 });
 export const categoryMonthSchema = budgetCategorySchema.extend({
@@ -216,6 +322,7 @@ export const categoryMonthSchema = budgetCategorySchema.extend({
   spent_last_month_minor: minorSchema,
   average_spent_3m_minor: z.number(),
   transactions: z.array(transactionSchema).max(20),
+  shares: z.array(incomingShareSchema),
 });
 export const auditEventSchema = z.object({
   ...row,
@@ -280,3 +387,16 @@ export type TransactionBatch = z.infer<typeof transactionBatchSchema>;
 export type BudgetCategory = z.infer<typeof budgetCategorySchema>;
 export type BudgetGroup = z.infer<typeof budgetGroupSchema>;
 export type Success = z.infer<typeof successSchema>;
+
+export type ShareInput = z.infer<typeof shareInputSchema>;
+export type TransactionShare = z.infer<typeof transactionShareSchema>;
+export type IncomingShare = z.infer<typeof incomingShareSchema>;
+export type IncomingShareList = z.infer<typeof incomingShareListSchema>;
+export type IncomingShareQuery = z.infer<typeof incomingShareQuerySchema>;
+export type IncomingShareUpdate = z.infer<typeof incomingShareUpdateSchema>;
+export type ShareContact = z.infer<typeof shareContactSchema>;
+export type Member = z.infer<typeof memberSchema>;
+export type Invitation = z.infer<typeof invitationSchema>;
+export type InvitationCreate = z.infer<typeof invitationCreateSchema>;
+export type InvitationCreated = z.infer<typeof invitationCreatedSchema>;
+export type InviteStatus = z.infer<typeof inviteStatusSchema>;

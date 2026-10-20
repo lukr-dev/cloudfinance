@@ -25,12 +25,13 @@ export function getOpenApi() {
         content: { "application/json": { schema: z.toJSONSchema(endpoint.response) } },
       },
     };
-    for (const code of ["400", "401", "404", "409", "500"])
+    for (const code of ["400", "401", "403", "404", "409", "500"])
       responses[code] = {
         description: (
           {
             400: "Validation failed",
             401: "Authentication required",
+            403: "Forbidden (admin required)",
             404: "Not found",
             409: "Conflict",
             500: "Internal error",
@@ -72,7 +73,7 @@ export function getOpenApi() {
       title: "cloudfinance API",
       version: "1.0.0",
       description:
-        "Zero-based budgets, independently per currency. Money uses signed integer minor units: negative amounts are outflows; positive amounts are inflows. No currency conversion. Months use YYYY-MM, dates YYYY-MM-DD. Full rollover includes negative balances. Ready to Assign subtracts all assignments including future months. Transfers have two linked transactions. Transaction batches are atomic; invalid items roll back the entire batch. Retry safely using external_id.",
+        "Zero-based budgets, independently per currency. Money uses signed integer minor units: negative amounts are outflows; positive amounts are inflows. No currency conversion. Months use YYYY-MM, dates YYYY-MM-DD. Full rollover includes negative balances. Ready to Assign subtracts all assignments including future months. Transfers have two linked transactions. Transaction batches are atomic; invalid items roll back the entire batch. Retry safely using external_id. Single transaction requests can share with member emails using equal, percent (basis points), or signed minor-unit amounts. Budgets count only each person’s part; shares never affect account balances. Shared repayment is excluded from budgets. Sign-up after setup requires X-Invite-Token. Invitations are admin-only, expire after 7 days and return the plaintext token once.",
     },
     components: {
       securitySchemes: {

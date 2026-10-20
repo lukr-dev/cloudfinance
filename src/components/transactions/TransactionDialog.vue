@@ -1,11 +1,22 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { TransactionCreate, TransactionUpdate } from "../../../shared/schemas";
-import { api } from "../../api/http";
+import type {
+  ShareContact,
+  ShareInput,
+  TransactionCreate,
+  TransactionUpdate,
+} from "../../../shared/schemas";
+import { ApiError, api } from "../../api/http";
 import { useErrorToast } from "../../composables/errors";
 import { useMoney } from "../../composables/money";
 import { todayIso } from "../../composables/month";
+import {
+  formatPercent,
+  parsePercent,
+  previewSplit,
+  type ShareDraft,
+} from "../../composables/split";
 import { useToasts } from "../../composables/toasts";
 import { useAccountsStore } from "../../stores/accounts";
 import { useCatalogStore } from "../../stores/catalog";
@@ -14,6 +25,8 @@ import FormField from "../ui/FormField.vue";
 import SegmentedControl from "../ui/SegmentedControl.vue";
 import UiButton from "../ui/UiButton.vue";
 import UiDialog from "../ui/UiDialog.vue";
+import CategoryOptions from "./CategoryOptions.vue";
+import SharePanel from "./SharePanel.vue";
 
 type Kind = "expense" | "income" | "transfer";
 
@@ -42,7 +55,11 @@ const transferAccountId = ref("");
 const transferAmount = ref("");
 const memo = ref("");
 const cleared = ref(false);
-const errors = ref<{ amount?: string; transferAmount?: string }>({});
+const errors = ref<{ amount?: string; transferAmount?: string; share?: string }>({});
+const share = ref<ShareDraft>({ method: "equal", people: [] });
+/** The draft as loaded, so an untouched split isn't resent (that would re-activate declines). */
+let initialShare = "";
+const contacts = ref<ShareContact[]>([]);
 const busy = ref(false);
 const confirmDelete = ref(false);
 const payees = ref<string[]>([]);
@@ -64,6 +81,17 @@ const transferNeedsCategory = computed(
     !!transferAccount.value &&
     account.value.on_budget !== transferAccount.value.on_budget,
 );
+/** Only regular entries in on-budget accounts can be split. */
+const shareable = computed(
+  () =>
+    kind.value !== "transfer" &&
+    account.value?.on_budget === true &&
+    (!categoryId.value || categoryId.value !== catalog.repayment?.id),
+);
+const total = computed(() => {
+  const value = parse(amount.value, currency.value);
+  return value === null ? 0 : kind.value === "income" ? Math.abs(value) : -Math.abs(value);
+});
 const showCategory = computed(() =>
   kind.value === "transfer" ? transferNeedsCategory.value : account.value?.on_budget !== false,
 );
@@ -85,6 +113,22 @@ watch(open, async (isOpen) => {
     transferAmount.value = "";
     memo.value = tx.memo;
     cleared.value = tx.cleared !== "uncleared";
+    share.value = tx.share
+      ? {
+          method: tx.share.split_method,
+          people: tx.share.participants.map((p) => ({
+            email: p.email,
+            name: p.name,
+            status: p.status,
+            value:
+              tx.share!.split_method === "percent" && p.percent_bp !== null
+                ? formatPercent(p.percent_bp)
+                : tx.share!.split_method === "amount"
+                  ? toInput(Math.abs(p.amount_minor), tx.currency)
+                  : "",
+          })),
+        }
+      : { method: "equal", people: [] };
   } else {
     kind.value = "expense";
     accountId.value = defaults.account_id ?? accounts.onBudget[0]?.id ?? accounts.open[0]?.id ?? "";
@@ -96,8 +140,13 @@ watch(open, async (isOpen) => {
     transferAmount.value = "";
     memo.value = "";
     cleared.value = false;
+    share.value = { method: "equal", people: [] };
   }
-  payees.value = await api<string[]>("GET", "/payees").catch(() => []);
+  initialShare = JSON.stringify(share.value);
+  [payees.value, contacts.value] = await Promise.all([
+    api<string[]>("GET", "/payees").catch(() => []),
+    api<ShareContact[]>("GET", "/share-contacts").catch(() => []),
+  ]);
 });
 
 watch(kind, (next, previous) => {
@@ -105,6 +154,33 @@ watch(kind, (next, previous) => {
   if (next === "income") categoryId.value = catalog.income?.id ?? "";
   else if (previous === "income") categoryId.value = "";
 });
+
+/** undefined = leave the split as it is; null = stop sharing. */
+function buildShare(): ShareInput | null | undefined | false {
+  const draft = share.value;
+  if (!shareable.value || !draft.people.length) return editing.value?.share ? null : undefined;
+  if (editing.value && JSON.stringify(draft) === initialShare) return undefined;
+  const values = draft.people.map((p) =>
+    draft.method === "percent"
+      ? parsePercent(p.value)
+      : draft.method === "amount"
+        ? parse(p.value, currency.value)
+        : null,
+  );
+  const preview = previewSplit(total.value, draft.method, values);
+  if (preview.error || draft.people.some((p) => !p.email.trim())) {
+    errors.value.share = t(preview.error === "over" ? "share.overShort" : "share.incomplete");
+    return false;
+  }
+  return {
+    split_method: draft.method,
+    participants: draft.people.map((p, i) => ({
+      email: p.email.trim(),
+      ...(draft.method === "percent" ? { percent_bp: values[i]! } : {}),
+      ...(draft.method === "amount" ? { amount_minor: preview.shares[i]! } : {}),
+    })),
+  };
+}
 
 function buildCategory(): string | null {
   if (!showCategory.value) return null;
@@ -119,6 +195,8 @@ async function save() {
     return;
   }
   const signed = kind.value === "income" ? value : -value;
+  const shareInput = buildShare();
+  if (shareInput === false) return;
   let received: number | undefined;
   if (crossCurrency.value) {
     const parsed = parse(transferAmount.value, transferAccount.value!.currency);
@@ -145,6 +223,7 @@ async function save() {
       if (kind.value !== "transfer" || transferNeedsCategory.value)
         patch.category_id = buildCategory();
       if (received !== undefined) patch.transfer_amount_minor = received;
+      if (shareInput !== undefined) patch.share = shareInput;
       await api("PATCH", `/transactions/${editing.value.id}`, { body: patch });
     } else {
       const body: TransactionCreate = {
@@ -166,6 +245,7 @@ async function save() {
         }
       } else {
         body.category_id = buildCategory();
+        if (shareInput) body.share = shareInput;
       }
       await api("POST", "/transactions", { body });
     }
@@ -174,7 +254,9 @@ async function save() {
     await accounts.load();
     ui.changed();
   } catch (e) {
-    showError(e);
+    if (e instanceof ApiError && e.code === "SHARE_RECIPIENT_NOT_FOUND")
+      errors.value.share = t("errors.SHARE_RECIPIENT_NOT_FOUND");
+    else showError(e);
   } finally {
     busy.value = false;
   }
@@ -211,7 +293,7 @@ const kindOptions = computed(() => [
   <UiDialog
     v-model:open="open"
     :title="editing ? t('transactions.editTitle') : t('transactions.newTitle')"
-    :width="520"
+    :width="560"
   >
     <form id="tx-form" class="form-grid" @submit.prevent="save">
       <div class="span-2 kind">
@@ -273,16 +355,7 @@ const kindOptions = computed(() => [
       >
         <select :id="id" v-model="categoryId" class="input">
           <option value="">{{ t("transactions.uncategorized") }}</option>
-          <option v-if="catalog.income" :value="catalog.income.id">
-            {{ t("transactions.readyToAssign") }}
-          </option>
-          <optgroup
-            v-for="entry in catalog.grouped"
-            :key="entry.group.id"
-            :label="entry.group.name"
-          >
-            <option v-for="c in entry.categories" :key="c.id" :value="c.id">{{ c.name }}</option>
-          </optgroup>
+          <CategoryOptions :repayment="!share.people.length" />
         </select>
       </FormField>
 
@@ -318,6 +391,16 @@ const kindOptions = computed(() => [
           placeholder="0.00"
         />
       </FormField>
+
+      <div v-if="shareable" class="span-2">
+        <SharePanel
+          v-model="share"
+          :total="total"
+          :currency="currency"
+          :contacts="contacts"
+          :error="errors.share"
+        />
+      </div>
 
       <FormField v-slot="{ id }" class="span-2" :label="t('transactions.memo')">
         <input :id="id" v-model="memo" class="input" maxlength="4000" />

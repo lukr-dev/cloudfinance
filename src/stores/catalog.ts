@@ -11,7 +11,7 @@ import type {
 } from "../../shared/schemas";
 import { api } from "../api/http";
 
-/** Category groups and categories (including the income system category). */
+/** Category groups and categories (including the income and repayment system categories). */
 export const useCatalogStore = defineStore("catalog", () => {
   const groups = ref<CategoryGroup[]>([]);
   const categories = ref<Category[]>([]);
@@ -26,6 +26,7 @@ export const useCatalogStore = defineStore("catalog", () => {
   }
 
   const income = computed(() => categories.value.find((c) => c.kind === "income") ?? null);
+  const repayment = computed(() => categories.value.find((c) => c.kind === "repayment") ?? null);
   const byId = computed(() => new Map(categories.value.map((c) => [c.id, c])));
 
   /** Expense categories grouped and sorted for selects. */
@@ -75,6 +76,7 @@ export const useCatalogStore = defineStore("catalog", () => {
     groups,
     categories,
     income,
+    repayment,
     byId,
     grouped,
     load,

@@ -8,6 +8,7 @@ export const authContextSchema = z.object({
   id: z.string(),
   email: z.email(),
   name: z.string(),
+  role: z.enum(["admin", "member"]),
   via: z.enum(["session", "api_key"]),
   api_key_id: z.string().optional(),
   api_key_name: z.string().nullable().optional(),

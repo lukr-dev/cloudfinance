@@ -5,6 +5,8 @@ import { db, sql } from "void/db";
 import { HTTPException } from "hono/http-exception";
 import type { AuthContext } from "../shared/auth";
 
+import { memberRole } from "./members";
+
 type ApiKeyAuth = { api: { verifyApiKey: ReturnType<typeof apiKey>["endpoints"]["verifyApiKey"] } };
 
 function unauthorized(): never {
@@ -58,6 +60,7 @@ export async function requireAuthContext(c: CloudContext): Promise<AuthContext> 
     if (!user) unauthorized();
     const context: AuthContext = {
       ...user,
+      role: await memberRole(user.id),
       via: "api_key",
       api_key_id: result.key.id,
       api_key_name: result.key.name,
@@ -67,7 +70,13 @@ export async function requireAuthContext(c: CloudContext): Promise<AuthContext> 
   }
   const user = getUser();
   if (!user) unauthorized();
-  const context: AuthContext = { id: user.id, email: user.email, name: user.name, via: "session" };
+  const context: AuthContext = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: await memberRole(user.id),
+    via: "session",
+  };
   c.set("financeAuth", context);
   return context;
 }
