@@ -23,13 +23,26 @@ export async function api<T>(
     if (value !== undefined && value !== null && value !== "")
       url.searchParams.set(key, String(value));
   }
+  const init: RequestInit = { method, credentials: "same-origin" };
+  if (options.body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(options.body);
+  }
+  return send<T>(url, init);
+}
+
+/** Multipart upload; the browser sets the boundary header itself. */
+export function upload<T>(path: string, form: FormData): Promise<T> {
+  return send<T>(new URL(`/api/v1${path}`, location.origin), {
+    method: "POST",
+    credentials: "same-origin",
+    body: form,
+  });
+}
+
+async function send<T>(url: URL, init: RequestInit): Promise<T> {
   let response: Response;
   try {
-    const init: RequestInit = { method, credentials: "same-origin" };
-    if (options.body !== undefined) {
-      init.headers = { "Content-Type": "application/json" };
-      init.body = JSON.stringify(options.body);
-    }
     response = await fetch(url, init);
   } catch {
     throw new ApiError(0, "NETWORK", "Network error");

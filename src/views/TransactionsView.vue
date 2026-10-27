@@ -275,6 +275,14 @@ function sourceLabel(source: string) {
               >
                 <AppIcon name="users" :size="13" :stroke-width="2" />
               </span>
+              <span
+                v-if="tx.attachment_count"
+                class="source"
+                :title="t('attachments.count', tx.attachment_count)"
+                :aria-label="t('attachments.count', tx.attachment_count)"
+              >
+                <AppIcon name="paperclip" :size="13" :stroke-width="2" />
+              </span>
               <span v-if="tx.source !== 'manual'" class="source" :title="sourceLabel(tx.source)">
                 <AppIcon
                   :name="tx.source === 'mcp' || tx.source === 'api' ? 'agents' : 'inbox'"

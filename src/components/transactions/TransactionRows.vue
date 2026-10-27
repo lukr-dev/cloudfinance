@@ -44,7 +44,15 @@ const days = computed(() => {
         @click="ui.openTransaction(tx)"
       >
         <span class="row__main">
-          <span class="row__payee">{{ tx.payee || "—" }}</span>
+          <span class="row__payee"
+            ><AppIcon
+              v-if="tx.attachment_count"
+              name="paperclip"
+              class="row__clip"
+              :size="12"
+              :stroke-width="2"
+            />{{ tx.payee || "—" }}</span
+          >
           <span class="row__meta"><CategoryCell :transaction="tx" /></span>
         </span>
         <span class="row__side">
@@ -109,6 +117,11 @@ const days = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.row__clip {
+  margin-right: var(--space-1);
+  vertical-align: -1px;
+  color: var(--text-faint);
 }
 .row__meta {
   display: flex;

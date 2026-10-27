@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { endpoints } from "../shared/endpoints";
+import { ATTACHMENT_CONTENT_TYPES } from "../shared/attachments";
 import { errorSchema } from "../shared/schemas";
 export function getOpenApi() {
   const paths: Record<string, Record<string, unknown>> = {};
@@ -20,12 +21,24 @@ export function getOpenApi() {
       }
     }
     const responses: Record<string, unknown> = {
-      "200": {
+      ["status" in endpoint ? endpoint.status : 200]: {
         description: "Success",
-        content: { "application/json": { schema: z.toJSONSchema(endpoint.response) } },
+        ...("status" in endpoint && endpoint.status === 204
+          ? {}
+          : {
+              content:
+                "binary" in endpoint
+                  ? Object.fromEntries(
+                      ATTACHMENT_CONTENT_TYPES.map((type) => [
+                        type,
+                        { schema: { type: "string", format: "binary" } },
+                      ]),
+                    )
+                  : { "application/json": { schema: z.toJSONSchema(endpoint.response) } },
+            }),
       },
     };
-    for (const code of ["400", "401", "403", "404", "409", "500"])
+    for (const code of ["400", "401", "403", "404", "409", "413", "415", "500"])
       responses[code] = {
         description: (
           {
@@ -34,6 +47,8 @@ export function getOpenApi() {
             403: "Forbidden (admin required)",
             404: "Not found",
             409: "Conflict",
+            413: "ATTACHMENT_TOO_LARGE",
+            415: "ATTACHMENT_TYPE_UNSUPPORTED",
             500: "Internal error",
           } as Record<string, string>
         )[code],
@@ -60,7 +75,11 @@ export function getOpenApi() {
         ? {
             requestBody: {
               required: true,
-              content: { "application/json": { schema: json(endpoint.body) } },
+              content: {
+                ["requestMediaType" in endpoint ? endpoint.requestMediaType : "application/json"]: {
+                  schema: json(endpoint.body),
+                },
+              },
             },
           }
         : {}),

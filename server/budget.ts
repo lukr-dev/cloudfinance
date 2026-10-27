@@ -16,6 +16,7 @@ import { expenseCategory, listGroups } from "./categories";
 import { write, rowBase } from "./audit";
 import { fail } from "./errors";
 import { categoryShares } from "./shares";
+import { categoryAttachments } from "./attachments";
 import { listTransactions } from "./transactions";
 function ledger(ctx: AuthContext) {
   return sql`SELECT t.user_id,t.date,t.currency,t.category_id,t.amount_minor-t.shared_out_minor amount_minor,t.transfer_account_id,0 is_share
@@ -49,7 +50,7 @@ export async function budgetCategories(ctx: AuthContext, month: string, currency
         sum(t.amount_minor) cumulative
       FROM (${ledger(ctx)}) t
       WHERE t.user_id=${ctx.id} AND t.currency=${currency} AND t.date<${shiftMonth(month, 1) + "-01"} GROUP BY t.category_id
-    ) SELECT c.*, coalesce(a.assigned,0) assigned_minor, coalesce(t.activity,0) activity_minor,
+    ) SELECT c.*, (SELECT count(*) FROM attachments x WHERE x.user_id=c.user_id AND x.category_id=c.id) attachment_count, coalesce(a.assigned,0) assigned_minor, coalesce(t.activity,0) activity_minor,
       coalesce(a.cumulative,0)+coalesce(t.cumulative,0) available_minor,
       coalesce(a.cumulative,0)+coalesce(t.cumulative,0)-coalesce(a.assigned,0)-coalesce(t.activity,0) carried_over_minor,
       sum(coalesce(a.assigned,0)) OVER (PARTITION BY c.group_id) group_assigned_minor,
@@ -149,6 +150,7 @@ export async function getCategoryMonth(
     ...stats,
     transactions: tx.transactions,
     shares: await categoryShares(ctx, id, month, c),
+    attachments: await categoryAttachments(ctx, id),
   };
 }
 export async function assignToCategory(

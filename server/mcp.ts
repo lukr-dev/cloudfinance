@@ -10,6 +10,7 @@ import * as transactions from "./transactions";
 import * as shares from "./shares";
 import * as invitations from "./invitations";
 import { listMembers } from "./members";
+import * as attachments from "./attachments";
 import { listPayees } from "./payees";
 import { listAuditEvents } from "./audit";
 import { DomainError } from "./errors";
@@ -25,6 +26,7 @@ export function mcpHandler(auth: AuthContext, origin = "") {
         readOnly = false,
         idempotent = false,
         destructive = false,
+        embeddedResource = false,
       ) {
         server.registerTool<z.ZodType, z.ZodType>(
           name,
@@ -45,9 +47,18 @@ export function mcpHandler(auth: AuthContext, origin = "") {
               const structured = (
                 Array.isArray(result) ? { items: result } : (result ?? { ok: true })
               ) as Record<string, unknown>;
+              const resource = embeddedResource
+                ? (structured as { uri: string; mimeType: string; blob: string })
+                : undefined;
+              const output = resource
+                ? { uri: resource.uri, mimeType: resource.mimeType }
+                : structured;
               return {
-                content: [{ type: "text", text: JSON.stringify(structured) }],
-                structuredContent: structured,
+                content: [
+                  { type: "text" as const, text: JSON.stringify(output) },
+                  ...(resource ? [{ type: "resource" as const, resource }] : []),
+                ],
+                structuredContent: output,
               };
             } catch (error) {
               if (error instanceof DomainError)
@@ -190,6 +201,56 @@ export function mcpHandler(auth: AuthContext, origin = "") {
         "Delete a transaction and its linked transfer leg.",
         s.idParamsSchema,
         (x) => transactions.deleteTransaction(auth, x.id),
+        false,
+        true,
+        true,
+      );
+      tool(
+        "list_attachments",
+        "List attachment metadata newest first, filtered by category or transaction, with a keyset cursor.",
+        s.attachmentQuerySchema,
+        async (x) => {
+          const page = await attachments.listAttachments(auth, x);
+          return { items: page.attachments, next_cursor: page.next_cursor };
+        },
+        true,
+      );
+      tool(
+        "get_attachment",
+        "Read attachment metadata and note.",
+        s.idParamsSchema,
+        (x) => attachments.getAttachment(auth, x.id),
+        true,
+      );
+      tool(
+        "upload_attachment",
+        "Upload a document or image as base64 with exactly one category_id or transaction_id. Decoded size is capped at 4 MB for the Worker CPU budget; use multipart REST /api/v1/attachments for files up to 10 MB. File type is detected from magic bytes.",
+        s.attachmentMcpUploadSchema,
+        (x) => attachments.uploadAttachmentBase64(auth, x),
+      );
+      tool(
+        "get_attachment_content",
+        "Read a file as an embedded resource (blob and mimeType). Maximum 4 MB; for larger files use REST /api/v1/attachments/:id/content.",
+        s.idParamsSchema,
+        (x) => attachments.attachmentBlob(auth, x.id),
+        true,
+        false,
+        false,
+        true,
+      );
+      tool(
+        "update_attachment",
+        "Update the free-text note or display file name. Parents cannot be changed.",
+        s.attachmentUpdateSchema.extend({ id: s.idSchema }),
+        ({ id, ...x }) => attachments.updateAttachment(auth, id, x),
+        false,
+        true,
+      );
+      tool(
+        "delete_attachment",
+        "Delete attachment metadata and its stored file.",
+        s.idParamsSchema,
+        (x) => attachments.deleteAttachment(auth, x.id),
         false,
         true,
         true,

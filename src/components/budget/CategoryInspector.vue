@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import type { BudgetMonth, CategoryMonth } from "../../../shared/schemas";
 import { useMoney } from "../../composables/money";
 import { formatDay, monthLabel } from "../../composables/month";
+import AttachmentList from "../attachments/AttachmentList.vue";
 import AppIcon from "../ui/AppIcon.vue";
 import AvailablePill from "../ui/AvailablePill.vue";
 import CategoryDot from "../ui/CategoryDot.vue";
@@ -21,6 +22,7 @@ const emit = defineEmits<{
   edit: [];
   saveNote: [note: string];
   reviewUncategorized: [];
+  attachmentsChanged: [];
 }>();
 
 const { t, locale } = useI18n();
@@ -150,6 +152,12 @@ const net = computed(
             :placeholder="t('inspector.addNote')"
             @blur="note !== (detail.note ?? '') && emit('saveNote', note)"
           />
+        </section>
+
+        <section>
+          <h3 class="label">{{ t("attachments.title") }}</h3>
+          <AttachmentList :category-id="selectedId" @changed="emit('attachmentsChanged')" />
+          <p class="faint small docs-hint">{{ t("attachments.categoryHint") }}</p>
         </section>
 
         <section>
@@ -381,6 +389,10 @@ h3.label {
 }
 .small {
   font-size: var(--text-sm);
+}
+.docs-hint {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
 }
 .glance-available {
   display: flex;

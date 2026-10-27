@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  ATTACHMENT_CONTENT_TYPES,
+  MAX_ATTACHMENT_NOTE_LENGTH,
+  MAX_MCP_ATTACHMENT_BYTES,
+} from "./attachments";
 import { currencyExponents } from "./money";
 export const currencySchema = z.enum(
   Object.keys(currencyExponents) as [
@@ -225,6 +230,55 @@ export const incomingShareListSchema = z.object({
   shares: z.array(incomingShareSchema),
   next_cursor: z.string().nullable(),
 });
+export const attachmentParentSchema = z
+  .object({
+    category_id: idSchema.optional(),
+    transaction_id: idSchema.optional(),
+    note: z.string().max(MAX_ATTACHMENT_NOTE_LENGTH).nullable().optional(),
+  })
+  .strict()
+  .refine((x) => Boolean(x.category_id) !== Boolean(x.transaction_id), {
+    message: "Exactly one of category_id and transaction_id is required.",
+  });
+export const attachmentUpdateSchema = z
+  .object({
+    note: z.string().max(MAX_ATTACHMENT_NOTE_LENGTH).nullable().optional(),
+    file_name: z.string().trim().min(1).max(255).optional(),
+  })
+  .strict();
+export const attachmentQuerySchema = pageQuerySchema.extend({
+  category_id: idSchema.optional(),
+  transaction_id: idSchema.optional(),
+});
+export const attachmentContentQuerySchema = z.object({ download: z.literal("1").optional() });
+export const attachmentUploadSchema = attachmentParentSchema
+  .safeExtend({
+    file: z.string().meta({ format: "binary" }),
+  })
+  .meta({
+    description:
+      "Upload one file up to 10 MiB. Exactly one parent ID is required; type is detected from magic bytes.",
+    oneOf: [{ required: ["category_id"] }, { required: ["transaction_id"] }],
+  });
+export const attachmentMcpUploadSchema = attachmentParentSchema.safeExtend({
+  file_name: z.string().min(1).max(255),
+  content_base64: z.string().max(4 * Math.ceil(MAX_MCP_ATTACHMENT_BYTES / 3)),
+});
+export const attachmentSchema = z.object({
+  id: z.string(),
+  category_id: z.string().nullable(),
+  transaction_id: z.string().nullable(),
+  file_name: z.string(),
+  content_type: z.enum(ATTACHMENT_CONTENT_TYPES),
+  size_bytes: z.number().int(),
+  note: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export const attachmentListSchema = z.object({
+  attachments: z.array(attachmentSchema),
+  next_cursor: z.string().nullable(),
+});
 export const transactionQuerySchema = pageQuerySchema.extend({
   account_id: idSchema.optional(),
   category_id: idSchema.optional(),
@@ -254,6 +308,7 @@ export const categorySchema = categoryCreateSchema.required().extend({
   ...row,
   group_id: z.string().nullable(),
   kind: z.enum(["income", "expense", "repayment"]),
+  attachment_count: z.number().int(),
 });
 export const assignmentRowSchema = assignmentSchema.extend({
   ...row,
@@ -278,6 +333,7 @@ export const transactionSchema = z.object({
   transfer_transaction_id: z.string().nullable(),
   source: z.string(),
   external_id: z.string().nullable(),
+  attachment_count: z.number().int(),
   account_name: z.string(),
   category_name: z.string().nullable(),
   category_color: colorSchema.nullable(),
@@ -323,6 +379,7 @@ export const categoryMonthSchema = budgetCategorySchema.extend({
   average_spent_3m_minor: z.number(),
   transactions: z.array(transactionSchema).max(20),
   shares: z.array(incomingShareSchema),
+  attachments: z.array(attachmentSchema),
 });
 export const auditEventSchema = z.object({
   ...row,
@@ -400,3 +457,8 @@ export type Invitation = z.infer<typeof invitationSchema>;
 export type InvitationCreate = z.infer<typeof invitationCreateSchema>;
 export type InvitationCreated = z.infer<typeof invitationCreatedSchema>;
 export type InviteStatus = z.infer<typeof inviteStatusSchema>;
+export type Attachment = z.infer<typeof attachmentSchema>;
+export type AttachmentParent = z.infer<typeof attachmentParentSchema>;
+export type AttachmentUpdate = z.infer<typeof attachmentUpdateSchema>;
+export type AttachmentQuery = z.infer<typeof attachmentQuerySchema>;
+export type AttachmentList = z.infer<typeof attachmentListSchema>;

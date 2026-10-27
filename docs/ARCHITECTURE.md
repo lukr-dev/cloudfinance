@@ -12,6 +12,7 @@ Agents are first-class users: everything the UI can do, an agent can do via REST
 | Deployment & backend | **Void SDK** (`void` package) → Cloudflare Workers on the user's personal CF account (`void deploy`) |
 | App shape | Void **"SPA + API"**: Vue 3 SPA in `src/`, Void API routes in `routes/` |
 | Database | Cloudflare **D1** via `void/db` (SQLite locally) |
+| Documents | Cloudflare **R2** via `void/storage` (`STORAGE` binding) |
 | Auth | **Better Auth** via Void (`void/auth`, mounted at `/api/auth/*`) |
 | Frontend | Vue 3 (`<script setup lang="ts">`), Vue Router, Pinia, vue-i18n (de + en) |
 | Validation | zod schemas in `shared/`, used by API routes, MCP tools and the frontend |
@@ -70,8 +71,9 @@ Tables (all with `id` as text ULID/UUID, `user_id`, `created_at`, `updated_at`):
 - **categories** — `group_id`, `name`, `sort_order`, `hidden`, `note`, `color` (one of the
   palette tokens `teal | orange | pink | indigo | violet | amber | red | green | blue | slate`;
   on create, default to the next token in round-robin order).
-  One **system category** per user: `kind = 'income'` ("Ready to Assign" inflow). It cannot be
-  deleted or renamed and does not appear in the budget table. User categories have `kind = 'expense'`.
+  Two **system categories** per user: `kind = 'income'` ("Ready to Assign" inflow) and
+  `kind = 'repayment'` ("Shared repayment"). They cannot be deleted or renamed and do not
+  appear in the budget table. User categories have `kind = 'expense'`.
 - **budget_assignments** — `month` (`YYYY-MM`), `category_id`, `currency`, `amount_minor`.
   Unique `(user_id, month, category_id, currency)`.
 - **transactions** — `account_id`, `date` (`YYYY-MM-DD`), `amount_minor`, `currency`
@@ -79,6 +81,14 @@ Tables (all with `id` as text ULID/UUID, `user_id`, `created_at`, `updated_at`):
   `cleared` (`uncleared` | `cleared` | `reconciled`), `transfer_account_id` and
   `transfer_transaction_id` (nullable, paired), `source` (`manual` | `api` | `mcp` | `import:<name>`),
   `external_id` (nullable; unique per `(user_id, account_id, external_id)` for idempotent import).
+- **attachments** — exactly one of `category_id` or `transaction_id` (owner-scoped foreign
+  keys), `file_name` (sanitized display name, ≤ 255 characters), `content_type`, `size_bytes`,
+  unique `storage_key`, nullable `note` (≤ 2000 characters). R2 keys are chosen by the server:
+  `users/<user_id>/attachments/<attachment_id>`. PDF, JPEG, PNG, WebP, HEIC and HEIF only,
+  detected from the first bytes; client MIME types are ignored. Maximum 10 MiB per file.
+  Metadata stays queryable in D1; no text extraction or AI processing.
+  Attachments remain private to the row owner (`user_id`): incoming shares expose no attachment
+  metadata or counts, and participants cannot attach files to a share or its owner’s transaction.
 - **audit_events** — `at`, `actor_type` (`user` | `api_key`), `actor_id`, `action`, `entity`,
   `entity_id`, `payload` (JSON). Every write through REST or MCP is logged, so agent changes
   stay traceable.
@@ -116,7 +126,17 @@ Only transactions in **on-budget** accounts count.
   but it is counted and surfaced in the UI and API (`uncategorized_count`).
 - An off-budget account's transactions never have a category.
 - A transaction's `currency` always equals its account's currency.
-- A category with transactions or assignments can't be deleted unless the request names a target to move them to (`reassign_to`).
+- A category with transactions, incoming shares, assignments or attachments can't be deleted unless the request
+  names a target to move them to (`reassign_to`); otherwise `CATEGORY_IN_USE` (409).
+  Reassignment moves the attachment metadata and preserves the R2 objects. System categories can hold attachments but cannot be deleted.
+- Deleting a transaction also deletes its attachments, on both sides of a transfer. Attachment
+  rows and the parent audit event commit together, then R2 objects are deleted. Parent audit
+  payloads include affected `attachment_ids` (also for category reassignment).
+- Upload writes R2 first, then metadata and its audit event atomically; failed inserts delete
+  the uploaded object. Delete commits metadata and audit first, then removes the object.
+  Failed R2 cleanup may leave an orphaned object, never a dangling metadata row.
+- Attachment writes use the existing audit convention: `action=create|update|delete`,
+  `entity=attachment`. Payloads contain metadata only, never file bytes.
 - An account with transactions can't be deleted, only closed.
 
 ## Members and invitations
@@ -228,7 +248,7 @@ participant's decline writes `share_declined` into the owner's log.
 ```
 shared/            zod schemas, DTO types, currency table, money helpers (pure, no I/O)
 server/            domain services (pure functions over the DB): accounts, categories,
-                   budget, transactions, settings, audit. Single source of business logic.
+                   budget, transactions, attachments, settings, audit. Single source of business logic.
 routes/            Void API routes: thin, validate → call server/ → JSON
 routes/api/v1/...  REST API
 routes/mcp.ts      MCP endpoint (thin adapter over server/)
@@ -241,7 +261,7 @@ REST and MCP **must not** contain business logic. Both call `server/`.
 
 ## REST API (`/api/v1`)
 
-JSON in and out; amounts in minor units; errors are `{ error: { code, message, details? } }` with the proper HTTP status.
+JSON except attachment upload/download; amounts in minor units; errors are `{ error: { code, message, details? } }` with the proper HTTP status.
 
 - `GET/PATCH /settings`
 - `GET/POST /accounts`, `GET/PATCH/DELETE /accounts/:id` (balances included: `balance_minor`,
@@ -256,6 +276,23 @@ JSON in and out; amounts in minor units; errors are `{ error: { code, message, d
   `external_id`, response says which were created or skipped). Transfers via `transfer_account_id`
   (+ `transfer_amount_minor` for cross-currency).
 - `GET/PATCH/DELETE /transactions/:id`
+- `GET /attachments?category_id&transaction_id&cursor&limit` → `{ attachments, next_cursor }`,
+  newest first by creation time and ID (default 50, maximum 200).
+- `POST /attachments` — multipart `file`, exactly one `category_id` / `transaction_id`, optional
+  `note`; returns 201 and metadata. Unsupported magic bytes → `ATTACHMENT_TYPE_UNSUPPORTED`
+  (415), oversized file → `ATTACHMENT_TOO_LARGE` (413), invalid metadata → `VALIDATION_FAILED`
+  (400), unknown or inaccessible parent → `NOT_FOUND` (404). Requests are bounded while reading;
+  multipart envelope overhead is limited to 64 KiB beyond the 10 MiB file limit.
+- `GET/PATCH/DELETE /attachments/:id` — PATCH accepts `{ note?, file_name? }`; parents are
+  immutable. DELETE returns **204 with no body** (other resource DELETE routes return 200
+  `{ ok: true }`). DTOs omit `user_id` and `storage_key`.
+- `GET /attachments/:id/content?download=1` — authenticated by cookie or API key, streams
+  stored bytes with detected Content-Type, Content-Length, `nosniff`, CSP `sandbox`, and
+  `Cache-Control: private, no-store`. Disposition is inline by default, attachment with
+  `download=1`; filename uses UTF-8 encoding.
+- Transaction and category DTOs include `attachment_count` (indexed SQL counts, all time).
+  Budget category month detail also includes `attachments` metadata; the count is independent
+  of the selected currency and month.
 - `GET /payees?q=` — distinct payee names (autocomplete)
 - `GET /audit-events?cursor&limit`
 - Transactions carry `split_method`, `shared_out_minor`, `own_amount_minor` and `share`
@@ -291,6 +328,24 @@ JSON in and out; amounts in minor units; errors are `{ error: { code, message, d
 - Tools mirror the REST surface (read + write): settings, accounts, categories, budget month,
   assign, move money, list/create/update/delete transactions. Tool descriptions document the
   sign convention and minor units clearly, because agents will get this wrong otherwise.
+
+- Attachment tools: `list_attachments`, `get_attachment`, `upload_attachment`,
+  `get_attachment_content`, `update_attachment`, `delete_attachment`. Upload accepts
+  `file_name`, `content_base64`, exactly one parent ID and optional note. MCP upload and
+  embedded blob download are limited to **4 MiB decoded** for the Worker CPU budget; larger
+  downloads return an error directing the agent to REST `/api/v1/attachments/:id/content`.
+  Lists use `{ items, next_cursor }`; content includes an MCP embedded resource with MIME type.
+
+## R2 setup
+
+`STORAGE` is required. `void.config.ts` explicitly enables storage inference because resource
+imports live in `server/`, outside Void's native default scan directories. `vp dev` uses a local
+persistent R2 binding without Cloudflare credentials. Direct Cloudflare deploy provisions the
+missing bucket and records its identity in `void.lock.json`; the current lock has only D1, so
+keep the lock artifact from the first R2 deployment. Enable R2 on the Cloudflare account first
+and grant the existing CI API token Account / Workers R2 Storage: Edit (alongside its existing
+Worker and D1 permissions). `.github/workflows/deploy.yml` already invokes Void provisioning;
+no separate bucket creation or public bucket access is needed.
 
 ## i18n
 

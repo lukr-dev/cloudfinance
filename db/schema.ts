@@ -1,3 +1,8 @@
+import {
+  ATTACHMENT_CONTENT_TYPES,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_NOTE_LENGTH,
+} from "../shared/attachments";
 import { sql } from "void/db";
 import {
   sqliteTable,
@@ -318,5 +323,53 @@ export const transactionShares = sqliteTable(
     ),
     check("shares_status", sql`${t.status} IN ('active','declined')`),
     check("shares_not_owner", sql`${t.user_id}!=${t.owner_user_id}`),
+  ],
+);
+
+export const attachments = sqliteTable(
+  "attachments",
+  {
+    ...base(),
+    category_id: text("category_id"),
+    transaction_id: text("transaction_id"),
+    file_name: text("file_name").notNull(),
+    content_type: text("content_type", { enum: ATTACHMENT_CONTENT_TYPES }).notNull(),
+    size_bytes: integer("size_bytes").notNull(),
+    storage_key: text("storage_key").notNull(),
+    note: text("note"),
+  },
+  (t) => [
+    uniqueIndex("attachments_storage_key").on(t.storage_key),
+    index("attachments_user_category").on(t.user_id, t.category_id),
+    index("attachments_user_transaction").on(t.user_id, t.transaction_id),
+    foreignKey({
+      columns: [t.user_id, t.category_id],
+      foreignColumns: [categories.user_id, categories.id],
+    }),
+    foreignKey({
+      columns: [t.user_id, t.transaction_id],
+      foreignColumns: [transactions.user_id, transactions.id],
+    }),
+    check(
+      "attachments_parent",
+      sql`(${t.category_id} IS NOT NULL) != (${t.transaction_id} IS NOT NULL)`,
+    ),
+    check("attachments_file_name", sql`length(${t.file_name}) BETWEEN 1 AND 255`),
+    check(
+      "attachments_content_type",
+      sql.raw(
+        "content_type IN (" +
+          ATTACHMENT_CONTENT_TYPES.map((type) => "'" + type + "'").join(",") +
+          ")",
+      ),
+    ),
+    check(
+      "attachments_size",
+      sql`typeof(${t.size_bytes})='integer' AND ${t.size_bytes} BETWEEN 1 AND ${sql.raw(String(MAX_ATTACHMENT_BYTES))}`,
+    ),
+    check(
+      "attachments_note",
+      sql`length(${t.note}) <= ${sql.raw(String(MAX_ATTACHMENT_NOTE_LENGTH))}`,
+    ),
   ],
 );

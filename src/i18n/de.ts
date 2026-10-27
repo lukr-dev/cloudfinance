@@ -141,7 +141,7 @@ const de: typeof en = {
     note: "Notiz",
     hidden: "Ausgeblendet",
     deleteConfirm: "Diese Kategorie löschen?",
-    reassignTo: "Buchungen und Verteilungen verschieben nach",
+    reassignTo: "Buchungen, Verteilungen und Dokumente verschieben nach",
     newGroupTitle: "Neue Gruppe",
     editGroupTitle: "Gruppe bearbeiten",
     deleteGroup: "Gruppe löschen",
@@ -181,6 +181,8 @@ const de: typeof en = {
     emptyFiltered: "Keine Buchungen für diese Filter.",
     loadMore: "Mehr laden",
     deleteConfirm: "Diese Buchung löschen?",
+    deleteConfirmFiles:
+      "Diese Buchung und ihr Dokument löschen? | Diese Buchung und ihre {n} Dokumente löschen?",
     deleted: "Buchung gelöscht",
     savedToast: "Buchung gespeichert",
     source: "Quelle",
@@ -277,7 +279,10 @@ const de: typeof en = {
     VALIDATION_FAILED: "Einige Angaben sind ungültig.",
     NOT_FOUND: "Nicht gefunden.",
     CONFLICT: "Das steht im Konflikt mit bestehenden Daten.",
-    CATEGORY_IN_USE: "Diese Kategorie hat noch Buchungen oder Verteilungen.",
+    CATEGORY_IN_USE: "Diese Kategorie hat noch Buchungen, Verteilungen oder Dokumente.",
+    ATTACHMENT_TOO_LARGE: "Diese Datei ist grösser als 10 MB.",
+    ATTACHMENT_TYPE_UNSUPPORTED:
+      "Nur PDFs und Bilder (JPG, PNG, WebP, HEIC) können angehängt werden.",
     ACCOUNT_HAS_TRANSACTIONS: "Dieses Konto hat Buchungen. Schliesse es stattdessen.",
     CURRENCY_NOT_ENABLED: "Aktiviere diese Währung zuerst in den Einstellungen.",
     FORBIDDEN: "Das kann nur der Admin.",
@@ -359,6 +364,27 @@ const de: typeof en = {
     invalidTitle: "Dieser Einladungslink funktioniert nicht",
     invalidLede:
       "Er ist vielleicht abgelaufen, wurde schon verwendet oder widerrufen. Bitte um einen neuen Link.",
+  },
+  attachments: {
+    title: "Dokumente",
+    attach: "PDF oder Bild anhängen",
+    hint: "Klicke oder ziehe Dateien hierher · bis 10 MB",
+    categoryHint:
+      "Lege hier Verträge und Policen ab, zum Beispiel die Versicherungspolice zur Jahresprämie.",
+    addNote: "Notiz hinzufügen",
+    notePlaceholder:
+      "Was ist das und warum ist es wichtig? z. B. verlängert sich jeden März, bis Dezember kündbar",
+    uploading: "Wird hochgeladen…",
+    uploadsOnSave: "wird beim Speichern hochgeladen",
+    open: "{name} öffnen",
+    download: "Herunterladen",
+    delete: "Dokument löschen",
+    remove: "Entfernen",
+    count: "{n} Dokument | {n} Dokumente",
+    tooLarge: "{name} ist grösser als 10 MB.",
+    unsupported: "{name} ist kein PDF und kein Bild.",
+    uploadFailed:
+      "Gespeichert, aber {names} konnte nicht hochgeladen werden. Öffne die Buchung, um es erneut anzuhängen. | Gespeichert, aber {names} konnten nicht hochgeladen werden. Öffne die Buchung, um sie erneut anzuhängen.",
   },
   months: {
     picker: "Monat wählen",

@@ -162,7 +162,7 @@ secret, and uploads the generated lock as the `void-lock` artifact. Commit that 
 gh run download <run-id> --repo lukr-dev/cloudfinance --name void-lock
 ```
 
-Void provisions D1, applies migrations and creates `BETTER_AUTH_SECRET`. The app rejects
+Void provisions D1 and the R2 bucket, applies migrations and creates `BETTER_AUTH_SECRET`. The app rejects
 public signup until `SETUP_TOKEN` is set, including the interval between deployment and
 secret creation. Open `https://cloudfinance.toastnet.work/setup?token=<token>`, or enter
 the token in setup, and create the owner's account. Confirm that setup status changes to
@@ -177,16 +177,41 @@ domain and retry from the same checkout if necessary, preserving `.void` recover
 
 Create a Cloudflare API token scoped to this account and the `toastnet.work` zone:
 
-- Account: **Workers Scripts: Edit**, **D1: Edit**, **Account Settings: Read**.
+- Account: **Workers Scripts: Edit**, **D1: Edit**, **Workers R2 Storage: Edit**,
+  **Account Settings: Read**.
 - Zone (`toastnet.work` only): **Workers Routes: Edit**, **Zone: Read**.
 - DNS: Edit is only needed if you also edit DNS records yourself; this configuration
-  uses the Workers Custom Domain API, which manages its own DNS/TLS. No KV, R2,
+  uses the Workers Custom Domain API, which manages its own DNS/TLS. No KV,
   Hyperdrive, Queues, Containers, or email permissions are needed for this app.
 
 These permissions follow the installed Void [Cloudflare CI guide](node_modules/void/docs/integrations/cloudflare.md#deploying-from-ci),
 Cloudflare's [Worker/route permissions](https://developers.cloudflare.com/workers/authorization/workers/),
 [Custom Domain API](https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/update/),
 and [zone lookup](https://developers.cloudflare.com/api/resources/zones/methods/list/).
+
+### File storage (R2) — required
+
+Documents attached to categories and transactions (PDFs and images, up to 10 MB each) are
+stored in Cloudflare R2 through `void/storage` (the `STORAGE` binding). R2 is **required**:
+the Worker has no fallback, and uploads fail without the binding. Before the first deployment
+that includes attachments:
+
+1. Enable R2 once on the account: Cloudflare dashboard → **R2 Object Storage** → enable.
+   Activating R2 can require a payment method on the account even if usage stays within
+   the free tier (Standard storage: 10 GB-month, 1M Class A and 10M Class B operations per
+   month, no egress fees; see the [R2 pricing page](https://developers.cloudflare.com/r2/pricing/)).
+2. Give the CI API token **Workers R2 Storage: Edit** (listed above). Without it, provisioning
+   fails before the Worker is deployed.
+3. Deploy as usual. Void creates the private bucket `cloudfinance-storage`, binds it as
+   `STORAGE`, and records it in `void.lock.json`. The workflow uploads the changed lock as
+   the `void-lock` artifact and warns until it is committed. Commit it to `dev`, as for the
+   first deployment, so later deployments reuse the same bucket.
+
+Keep the bucket private: don't enable public access or an `r2.dev` URL. Files are only
+served through `GET /api/v1/attachments/:id/content` after authentication, under server-chosen
+keys (`users/<user_id>/attachments/<id>`). Local `vp dev` and the tests use a local R2
+emulation in `.void/` and need no Cloudflare login. See _R2 setup_ in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the storage rules.
 
 In GitHub **Settings → Secrets and variables → Actions**, add repository secret
 `CLOUDFLARE_API_TOKEN` and repository variable `CLOUDFLARE_ACCOUNT_ID` with value
