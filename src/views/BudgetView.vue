@@ -210,6 +210,7 @@ const groupDialog = ref({ open: false, groupId: null as string | null });
         @move="moveOpen = true"
         @edit="categoryDialog = { open: true, categoryId: budget.selectedId, groupId: null }"
         @save-note="saveNote"
+        @attachments-changed="ui.changed()"
         @review-uncategorized="
           router.push({
             path: '/transactions',

@@ -95,6 +95,13 @@ function toggle(groupId: string) {
             <button type="button" class="cat-name" @click.stop="emit('select', category.id)">
               <CategoryDot :color="category.color" />
               <span class="cat-name__text">{{ category.name }}</span>
+              <AppIcon
+                v-if="category.attachment_count"
+                name="paperclip"
+                class="clip"
+                :size="13"
+                :stroke-width="2"
+              />
             </button>
           </td>
           <td>
@@ -212,6 +219,11 @@ function toggle(groupId: string) {
   cursor: pointer;
   text-align: left;
   font-size: var(--text-md);
+}
+.clip {
+  flex: none;
+  margin-left: calc(-1 * var(--space-1));
+  color: var(--text-faint);
 }
 .activity {
   color: var(--text-muted);

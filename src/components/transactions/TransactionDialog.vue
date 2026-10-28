@@ -2,12 +2,14 @@
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type {
+  Attachment,
   ShareContact,
   ShareInput,
   TransactionCreate,
+  TransactionResult,
   TransactionUpdate,
 } from "../../../shared/schemas";
-import { ApiError, api } from "../../api/http";
+import { ApiError, api, upload } from "../../api/http";
 import { useErrorToast } from "../../composables/errors";
 import { useMoney } from "../../composables/money";
 import { todayIso } from "../../composables/month";
@@ -21,6 +23,7 @@ import { useToasts } from "../../composables/toasts";
 import { useAccountsStore } from "../../stores/accounts";
 import { useCatalogStore } from "../../stores/catalog";
 import { useUiStore } from "../../stores/ui";
+import AttachmentList from "../attachments/AttachmentList.vue";
 import FormField from "../ui/FormField.vue";
 import SegmentedControl from "../ui/SegmentedControl.vue";
 import UiButton from "../ui/UiButton.vue";
@@ -63,6 +66,10 @@ const contacts = ref<ShareContact[]>([]);
 const busy = ref(false);
 const confirmDelete = ref(false);
 const payees = ref<string[]>([]);
+const pendingFiles = ref<File[]>([]);
+let attachmentsChanged = false;
+/** Bumped on every open, so a slow save can't close or feed files into a newer dialog. */
+let generation = 0;
 
 const account = computed(() => accounts.byId.get(accountId.value));
 const transferAccount = computed(() => accounts.byId.get(transferAccountId.value));
@@ -97,7 +104,13 @@ const showCategory = computed(() =>
 );
 
 watch(open, async (isOpen) => {
-  if (!isOpen) return;
+  if (!isOpen) {
+    if (attachmentsChanged) ui.changed();
+    return;
+  }
+  generation++;
+  pendingFiles.value = [];
+  attachmentsChanged = false;
   const tx = editing.value;
   const defaults = state.value.defaults;
   errors.value = {};
@@ -210,6 +223,10 @@ async function save() {
     }
   }
 
+  const run = generation;
+  const sourceAccountId = accountId.value;
+  const files = [...pendingFiles.value];
+  let failed: string[] = [];
   busy.value = true;
   try {
     if (editing.value) {
@@ -247,10 +264,14 @@ async function save() {
         body.category_id = buildCategory();
         if (shareInput) body.share = shareInput;
       }
-      await api("POST", "/transactions", { body });
+      const result = await api<TransactionResult>("POST", "/transactions", { body });
+      const created = result.created.find((tx) => tx.account_id === sourceAccountId);
+      failed = created ? await uploadFiles(created.id, files) : files.map((f) => f.name);
     }
     push(t("transactions.savedToast"));
-    open.value = false;
+    if (failed.length)
+      push(t("attachments.uploadFailed", { names: failed.join(", ") }, failed.length), "error");
+    if (run === generation) open.value = false;
     await accounts.load();
     ui.changed();
   } catch (e) {
@@ -260,6 +281,18 @@ async function save() {
   } finally {
     busy.value = false;
   }
+}
+
+/** Files picked before the transaction existed; returns the names that failed to upload. */
+async function uploadFiles(transactionId: string, files: File[]): Promise<string[]> {
+  const failed: string[] = [];
+  for (const file of files) {
+    const form = new FormData();
+    form.set("file", file);
+    form.set("transaction_id", transactionId);
+    await upload<Attachment>("/attachments", form).catch(() => failed.push(file.name));
+  }
+  return failed;
 }
 
 async function remove() {
@@ -405,11 +438,25 @@ const kindOptions = computed(() => [
       <FormField v-slot="{ id }" class="span-2" :label="t('transactions.memo')">
         <input :id="id" v-model="memo" class="input" maxlength="4000" />
       </FormField>
+      <div class="span-2 attach">
+        <span class="attach__label">{{ t("attachments.title") }}</span>
+        <AttachmentList
+          v-model:pending="pendingFiles"
+          :transaction-id="editing?.id"
+          @changed="attachmentsChanged = true"
+        />
+      </div>
       <label class="checkbox span-2"
         ><input v-model="cleared" type="checkbox" />{{ t("transactions.cleared") }}</label
       >
 
-      <p v-if="confirmDelete" class="span-2 confirm">{{ t("transactions.deleteConfirm") }}</p>
+      <p v-if="confirmDelete" class="span-2 confirm">
+        {{
+          editing?.attachment_count
+            ? t("transactions.deleteConfirmFiles", editing.attachment_count)
+            : t("transactions.deleteConfirm")
+        }}
+      </p>
     </form>
     <template #footer>
       <UiButton
@@ -431,6 +478,15 @@ const kindOptions = computed(() => [
 </template>
 
 <style scoped>
+.attach {
+  display: grid;
+  gap: 6px;
+}
+.attach__label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+}
 .kind:empty {
   display: none;
 }

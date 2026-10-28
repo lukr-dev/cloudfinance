@@ -3,7 +3,7 @@ import { defineConfig } from "void/config";
 
 export default defineConfig({
   worker: { compatibility_date: "2026-10-17" },
-  inference: { appType: "void" },
+  inference: { appType: "void", bindings: { storage: true } },
   cloudflare: {
     name: "cloudfinance",
     account_id: "7979b4f7816680c8ba9be80700d1abe4",

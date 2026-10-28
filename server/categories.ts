@@ -6,6 +6,7 @@ import {
   transactions,
   budgetAssignments,
   transactionShares,
+  attachments,
 } from "../db/schema";
 import type { AuthContext } from "../shared/auth";
 import {
@@ -70,22 +71,19 @@ export async function deleteGroup(ctx: AuthContext, id: string) {
   ]);
   return { ok: true as const };
 }
+const categorySelect = sql`SELECT c.*, (SELECT count(*) FROM attachments x WHERE x.user_id=c.user_id AND x.category_id=c.id) attachment_count FROM categories c`;
 export async function listCategories(ctx: AuthContext): Promise<Category[]> {
   await getSettings(ctx);
-  return db
-    .select()
-    .from(categories)
-    .where(eq(categories.user_id, ctx.id))
-    .orderBy(asc(categories.sort_order), asc(categories.id)) as Promise<Category[]>;
+  const rows = await db.all<Category>(
+    sql`${categorySelect} WHERE c.user_id=${ctx.id} ORDER BY c.sort_order,c.id`,
+  );
+  return rows.map((c) => ({ ...c, hidden: Boolean(c.hidden) }));
 }
 export async function getCategory(ctx: AuthContext, id: string): Promise<Category> {
-  return found(
-    await db
-      .select()
-      .from(categories)
-      .where(and(eq(categories.user_id, ctx.id), eq(categories.id, id)))
-      .get(),
-  ) as Category;
+  const row = found(
+    await db.get<Category>(sql`${categorySelect} WHERE c.user_id=${ctx.id} AND c.id=${id}`),
+  );
+  return { ...row, hidden: Boolean(row.hidden) };
 }
 export async function expenseCategory(ctx: AuthContext, id: string) {
   const cat = await getCategory(ctx, id);
@@ -126,46 +124,65 @@ export async function deleteCategory(ctx: AuthContext, id: string, reassignTo?: 
   if (reassignTo === id) fail("VALIDATION_FAILED", "Reassignment target must be another category.");
   if (reassignTo) await expenseCategory(ctx, reassignTo);
   const used = await db.get<{ n: number }>(
-    sql`SELECT (EXISTS(SELECT 1 FROM transactions WHERE user_id=${ctx.id} AND category_id=${id}) OR EXISTS(SELECT 1 FROM transaction_shares WHERE user_id=${ctx.id} AND category_id=${id}) OR EXISTS(SELECT 1 FROM budget_assignments WHERE user_id=${ctx.id} AND category_id=${id})) n`,
+    sql`SELECT (EXISTS(SELECT 1 FROM transactions WHERE user_id=${ctx.id} AND category_id=${id}) OR EXISTS(SELECT 1 FROM transaction_shares WHERE user_id=${ctx.id} AND category_id=${id}) OR EXISTS(SELECT 1 FROM attachments WHERE user_id=${ctx.id} AND category_id=${id}) OR EXISTS(SELECT 1 FROM budget_assignments WHERE user_id=${ctx.id} AND category_id=${id})) n`,
   );
   if (used?.n && !reassignTo)
-    fail("CATEGORY_IN_USE", "Provide reassign_to to move transactions and assignments.", 409);
+    fail(
+      "CATEGORY_IN_USE",
+      "Provide reassign_to to move transactions, shares, assignments and attachments.",
+      409,
+    );
   const deletion = db
     .delete(categories)
     .where(and(eq(categories.user_id, ctx.id), eq(categories.id, id)));
   if (reassignTo) {
     const now = new Date().toISOString();
-    await write(ctx, "delete", "category", id, { reassign_to: reassignTo }, [
-      db
-        .update(transactionShares)
-        .set({ category_id: reassignTo, updated_at: now })
-        .where(and(eq(transactionShares.user_id, ctx.id), eq(transactionShares.category_id, id))),
-      db
-        .update(transactions)
-        .set({ category_id: reassignTo, updated_at: now })
-        .where(and(eq(transactions.user_id, ctx.id), eq(transactions.category_id, id))),
-      db
-        .insert(budgetAssignments)
-        .select(
-          sql`SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-a' || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))), user_id, created_at, ${now}, month, ${reassignTo}, currency, amount_minor FROM budget_assignments WHERE user_id=${ctx.id} AND category_id=${id} AND true`,
-        )
-        .onConflictDoUpdate({
-          target: [
-            budgetAssignments.user_id,
-            budgetAssignments.month,
-            budgetAssignments.category_id,
-            budgetAssignments.currency,
-          ],
-          set: {
-            amount_minor: sql`budget_assignments.amount_minor + excluded.amount_minor`,
-            updated_at: now,
-          },
-        }),
-      db
-        .delete(budgetAssignments)
-        .where(and(eq(budgetAssignments.user_id, ctx.id), eq(budgetAssignments.category_id, id))),
-      deletion,
-    ]);
+    const moved = await db
+      .select({ id: attachments.id })
+      .from(attachments)
+      .where(and(eq(attachments.user_id, ctx.id), eq(attachments.category_id, id)));
+    await write(
+      ctx,
+      "delete",
+      "category",
+      id,
+      { reassign_to: reassignTo, attachment_ids: moved.map((a) => a.id) },
+      [
+        db
+          .update(attachments)
+          .set({ category_id: reassignTo, updated_at: now })
+          .where(and(eq(attachments.user_id, ctx.id), eq(attachments.category_id, id))),
+        db
+          .update(transactionShares)
+          .set({ category_id: reassignTo, updated_at: now })
+          .where(and(eq(transactionShares.user_id, ctx.id), eq(transactionShares.category_id, id))),
+        db
+          .update(transactions)
+          .set({ category_id: reassignTo, updated_at: now })
+          .where(and(eq(transactions.user_id, ctx.id), eq(transactions.category_id, id))),
+        db
+          .insert(budgetAssignments)
+          .select(
+            sql`SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-a' || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))), user_id, created_at, ${now}, month, ${reassignTo}, currency, amount_minor FROM budget_assignments WHERE user_id=${ctx.id} AND category_id=${id} AND true`,
+          )
+          .onConflictDoUpdate({
+            target: [
+              budgetAssignments.user_id,
+              budgetAssignments.month,
+              budgetAssignments.category_id,
+              budgetAssignments.currency,
+            ],
+            set: {
+              amount_minor: sql`budget_assignments.amount_minor + excluded.amount_minor`,
+              updated_at: now,
+            },
+          }),
+        db
+          .delete(budgetAssignments)
+          .where(and(eq(budgetAssignments.user_id, ctx.id), eq(budgetAssignments.category_id, id))),
+        deletion,
+      ],
+    );
   } else await write(ctx, "delete", "category", id, {}, [deletion]);
   return { ok: true as const };
 }

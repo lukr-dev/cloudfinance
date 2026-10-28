@@ -303,7 +303,7 @@ export async function backendSmoke(
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 27);
+    assert.equal(tools.tools.length, 33);
     const budget = await client.callTool({
       name: "get_budget_month",
       arguments: { month: "2026-08", currency: "CHF" },
@@ -334,7 +334,7 @@ export async function backendSmoke(
     assert(wireRequests.every((body) => !body.includes('"method":"initialize"')));
     assert(wireRequests.some((body) => body.includes("io.modelcontextprotocol/protocolVersion")));
     log(
-      "MCP official client: server/discover, tools/list (27 tools), get_budget_month and create_transactions passed using 2026-07-28 _meta; no initialize or session ID.",
+      "MCP official client: server/discover, tools/list (33 tools), get_budget_month and create_transactions passed using 2026-07-28 _meta; no initialize or session ID.",
     );
   } finally {
     await client.close();

@@ -5,6 +5,7 @@ import { PHONE, useMediaQuery } from "../../composables/media";
 import { useMoney } from "../../composables/money";
 import { formatDate } from "../../composables/month";
 import { useUiStore } from "../../stores/ui";
+import AppIcon from "../ui/AppIcon.vue";
 import CategoryCell from "./CategoryCell.vue";
 import TransactionRows from "./TransactionRows.vue";
 
@@ -31,7 +32,13 @@ const phone = useMediaQuery(PHONE);
       <tr v-for="tx in transactions" :key="tx.id" @click="ui.openTransaction(tx)">
         <td class="left muted date">{{ formatDate(tx.date, locale) }}</td>
         <td class="left payee">
-          {{ tx.payee || "—" }}<span v-if="tx.memo" class="memo">{{ tx.memo }}</span>
+          <AppIcon
+            v-if="tx.attachment_count"
+            name="paperclip"
+            class="clip"
+            :size="13"
+            :stroke-width="2"
+          />{{ tx.payee || "—" }}<span v-if="tx.memo" class="memo">{{ tx.memo }}</span>
         </td>
         <td class="left"><CategoryCell :transaction="tx" /></td>
         <td class="left muted hide-sm">{{ tx.account_name }}</td>
@@ -64,6 +71,11 @@ const phone = useMediaQuery(PHONE);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.clip {
+  margin-right: var(--space-1);
+  vertical-align: -2px;
+  color: var(--text-faint);
 }
 .memo {
   color: var(--text-faint);

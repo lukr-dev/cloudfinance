@@ -1,5 +1,5 @@
 import { db, sql, eq, and, inArray } from "void/db";
-import { transactions, accounts, categories } from "../db/schema";
+import { transactions, accounts, categories, attachments } from "../db/schema";
 import type { AuthContext } from "../shared/auth";
 import type { Currency } from "../shared/money";
 import type {
@@ -12,13 +12,15 @@ import type {
   TransactionResult,
 } from "../shared/schemas";
 import { withShares, prepareShares } from "./shares";
+import { deleteAttachmentObjects } from "./attachments";
 import { write, rowBase } from "./audit";
 import { fail, found } from "./errors";
 import { getAccount } from "./accounts";
 import { getCategory } from "./categories";
 import { incomeCategory } from "./settings";
 import { decodeCursor, encodeCursor } from "./pagination";
-const joined = sql`SELECT t.*, a.name account_name, c.name category_name, c.color category_color
+const joined = sql`SELECT t.*, a.name account_name, c.name category_name, c.color category_color,
+  (SELECT count(*) FROM attachments x WHERE x.user_id=t.user_id AND x.transaction_id=t.id) attachment_count
   FROM transactions t JOIN accounts a ON a.user_id=t.user_id AND a.id=t.account_id
   LEFT JOIN categories c ON c.user_id=t.user_id AND c.id=t.category_id`;
 export async function getTransaction(ctx: AuthContext, id: string): Promise<Transaction> {
@@ -381,12 +383,35 @@ export async function deleteTransaction(ctx: AuthContext, id: string) {
   const current = await getTransaction(ctx, id);
   const ids = current.transfer_transaction_id ? [id, current.transfer_transaction_id] : [id];
   const plan = await prepareShares(ctx, current, null, current);
-  await write(ctx, "delete", "transaction", id, { paired_id: current.transfer_transaction_id }, [
-    ...plan.before,
-    ...plan.after,
-    db
-      .delete(transactions)
-      .where(and(eq(transactions.user_id, ctx.id), inArray(transactions.id, ids))),
-  ]);
+  const attached = await db
+    .select({ id: attachments.id, storage_key: attachments.storage_key })
+    .from(attachments)
+    .where(and(eq(attachments.user_id, ctx.id), inArray(attachments.transaction_id, ids)));
+  await write(
+    ctx,
+    "delete",
+    "transaction",
+    id,
+    { paired_id: current.transfer_transaction_id, attachment_ids: attached.map((a) => a.id) },
+    [
+      ...plan.before,
+      ...plan.after,
+      // Only the captured rows, so their R2 keys are known; an attachment uploaded since then
+      // trips the foreign key and the whole batch fails with CONFLICT instead of leaking.
+      db.delete(attachments).where(
+        and(
+          eq(attachments.user_id, ctx.id),
+          inArray(
+            attachments.id,
+            attached.map((a) => a.id),
+          ),
+        ),
+      ),
+      db
+        .delete(transactions)
+        .where(and(eq(transactions.user_id, ctx.id), inArray(transactions.id, ids))),
+    ],
+  );
+  await deleteAttachmentObjects(attached.map((a) => a.storage_key));
   return { ok: true as const };
 }
